@@ -1,0 +1,17 @@
+.{
+    .name = .game,
+    .version = "0.0.0",
+    .fingerprint = 0x232b318c3deab823,
+    .minimum_zig_version = "0.14.0",
+    .dependencies = .{
+        .wgpu_native_zig = .{
+            .url = "https://github.com/bronter/wgpu_native_zig/archive/refs/tags/v5.1.0.tar.gz",
+            .hash = "wgpu_native_zig-5.1.0-B9jeDPmZAgAqCtg1bpt30WiO4lATvvQ9xKGTwfT2mzb0",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}
