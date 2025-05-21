@@ -18,16 +18,21 @@ const State = struct {
 };
 
 const vertex_data = [_]f32{
-    // x,   y,     r,   g,   b
-    -0.5, -0.5, 1.0, 0.0, 0.0,
-    0.5,  -0.5, 0.0, 1.0, 0.0,
-    0.5,  0.5,  0.0, 0.0, 1.0,
-    -0.5, 0.5,  1.0, 1.0, 0.0,
+    -0.5, -0.5, -0.3, 1.0, 0.0, 0.0,
+    0.5,  -0.5, -0.3, 0.0, 1.0, 0.0,
+    0.5,  0.5,  -0.3, 0.0, 0.0, 1.0,
+    -0.5, 0.5,  -0.3, 1.0, 0.0, 0.0,
+
+    0.0,  0.0,  0.5,  0.5, 0.5, 0.5,
 };
 
 const index_data = [_]u16{
     0, 1, 2,
     0, 2, 3,
+    0, 1, 4,
+    1, 2, 4,
+    2, 3, 4,
+    3, 0, 4,
 };
 
 export fn Plug_Startup(engine: *Engine) callconv(.C) ?*State {
@@ -110,9 +115,19 @@ export fn Plug_Loaded(_: *Engine, state: *State) callconv(.C) void {
     if (state.pipeline) |pipeline| pipeline.release();
     if (state.bindgroup) |bindgroup| bindgroup.release();
 
-    global_state = state;
+    state.window.onResize(@ptrCast(state), struct {
+        fn callback(ctx: ?*anyopaque, _: ?Engine.Window.Handle, width: u32, height: u32) callconv(.C) void {
+            const _state: *State = @ptrCast(@alignCast(ctx));
 
-    state.window.onResize(&onResize);
+            _state.surface.configure(&.{
+                .width = @intCast(width),
+                .height = @intCast(height),
+                .format = .bgra8_unorm_srgb,
+                .present_mode = .fifo,
+                .device = _state.device,
+            });
+        }
+    }.callback);
 
     const shader_desc = wgpu.ShaderModuleWGSLDescriptor{
         .chain = .{ .s_type = .shader_module_wgsl_descriptor },
@@ -125,19 +140,19 @@ export fn Plug_Loaded(_: *Engine, state: *State) callconv(.C) void {
     const vertex_attributes = [_]wgpu.VertexAttribute{
         wgpu.VertexAttribute{
             .shader_location = 0,
-            .format = .float32x2,
+            .format = .float32x3,
             .offset = 0,
         },
         wgpu.VertexAttribute{
             .shader_location = 1,
             .format = .float32x3,
-            .offset = 2 * @sizeOf(f32),
+            .offset = 3 * @sizeOf(f32),
         },
     };
 
     const vertex_layouts = [_]wgpu.VertexBufferLayout{
         wgpu.VertexBufferLayout{
-            .array_stride = 5 * @sizeOf(f32),
+            .array_stride = 6 * @sizeOf(f32),
             .attribute_count = vertex_attributes.len,
             .attributes = &vertex_attributes,
         },
@@ -212,6 +227,15 @@ export fn Plug_Loaded(_: *Engine, state: *State) callconv(.C) void {
     }).?;
     defer layout.release();
 
+    // const depth_stencil = wgpu.DepthStencilState{
+    //     .depth_compare = .less,
+    //     .depth_write_enabled = @intFromBool(true),
+    //     .format = wgpu.TextureFormat.depth24_plus,
+    //     .stencil_read_mask = 0,
+    //     .stencil_write_mask = 0,
+    // };
+    // _ = depth_stencil;
+
     state.pipeline = state.device.createRenderPipeline(&.{
         .layout = layout,
         .vertex = vertex_state,
@@ -219,6 +243,10 @@ export fn Plug_Loaded(_: *Engine, state: *State) callconv(.C) void {
         .primitive = .{},
         .multisample = .{},
     }).?;
+}
+
+export fn Plug_Event(_: *Engine, _: *State, event: *const Engine.Event) callconv(.C) void {
+    std.debug.print("{any}\n", .{event});
 }
 
 export fn Plug_Update(engine: *Engine, state: *State) callconv(.C) bool {
@@ -254,7 +282,7 @@ export fn Plug_Update(engine: *Engine, state: *State) callconv(.C) bool {
         .color_attachment_count = 1,
         .color_attachments = &.{.{
             .view = surface_view,
-            //.clear_value = .{ .r = 1.0, .g = 0.2, .b = 0.2 },
+            // .clear_value = .{ .r = 1.0, .g = 0.2, .b = 0.2 },
             .clear_value = .{},
         }},
     }).?;
@@ -281,16 +309,4 @@ export fn Plug_Update(engine: *Engine, state: *State) callconv(.C) bool {
     _ = state.device.poll(false, null);
 
     return !state.window.shouldClose();
-}
-
-var global_state: *State = undefined;
-
-fn onResize(_: ?Engine.Window.Handle, width: c_int, height: c_int) callconv(.C) void {
-    global_state.surface.configure(&.{
-        .width = @intCast(width),
-        .height = @intCast(height),
-        .format = .bgra8_unorm_srgb,
-        .present_mode = .fifo,
-        .device = global_state.device,
-    });
 }

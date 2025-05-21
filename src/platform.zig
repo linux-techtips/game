@@ -70,8 +70,19 @@ export fn Engine_Window_Surface(window: *Window, instance: *wgpu.Instance) *wgpu
     }).?;
 }
 
-export fn Engine_Window_On_Resize(window: *Window, callback: *const fn (handle: ?Window.Handle, width: c_int, height: c_int) callconv(.C) void) callconv(.C) void {
-    _ = c.glfwSetWindowSizeCallback(@ptrCast(window.handle), @ptrCast(callback));
+// TODO: I do not particularly like this.
+var onResizeCallback: Engine.Window.ResizeCallback = undefined;
+var onResizeContext: ?*anyopaque = null;
+
+export fn Engine_Window_On_Resize(window: *Window, ctx: ?*anyopaque, callback: Engine.Window.ResizeCallback) callconv(.C) void {
+    onResizeCallback = callback;
+    onResizeContext = ctx;
+
+    _ = c.glfwSetWindowSizeCallback(@ptrCast(window.handle), @ptrCast(&(struct {
+        pub fn onResize(handle: ?Window.Handle, width: c_int, height: c_int) callconv(.C) void {
+            onResizeCallback(onResizeContext, handle, @intCast(width), @intCast(height));
+        }
+    }).onResize));
 }
 
 export fn Engine_Window_Get_Size(window: *Window) callconv(.C) extern struct { width: u32, height: u32 } {

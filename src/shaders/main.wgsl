@@ -1,5 +1,5 @@
 struct VertexInput {
-    @location(0) position: vec2f,
+    @location(0) position: vec3f,
     @location(1) color: vec3f,
 };
 
@@ -15,11 +15,7 @@ struct VertexOutput {
 fn vert(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
 
-    // let ratio = 1200.0 / 720.0;
-    var offset = vec2f(0, 0);
-	offset += 0.3 * vec2f(cos(time), sin(time));
-
-	out.position = vec4f(in.position.x + offset.x, (in.position.y + offset.y) * ratio, 0.0, 1.0);
+	out.position = vec4f(in.position.x, in.position.y * ratio, 0.0, 1.0);
 
     out.color = in.color;
 

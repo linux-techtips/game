@@ -16,11 +16,13 @@ const VTable = struct {
     const Shutdown = *const fn (*Engine, *anyopaque) callconv(.C) void;
     const Loaded = *const fn (*Engine, *anyopaque) callconv(.C) void;
     const Update = *const fn (*Engine, *anyopaque) callconv(.C) bool;
+    const Event = *const fn (*Engine, *anyopaque, *const Engine.Event) callconv(.C) bool;
 
     startup: Startup,
     shutdown: Shutdown,
     update: Update,
     loaded: Loaded,
+    event: Event,
 
     pub fn lookup(lib: *std.DynLib) Error!VTable {
         var vtable: VTable = undefined;

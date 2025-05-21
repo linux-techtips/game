@@ -47,6 +47,10 @@ pub inline fn closeWindow(engine: *Engine, window: *Window) void {
     engine.allocator.destroy(window);
 }
 
+pub const Event = union(enum) {
+    resize: struct { width: u32, height: u32 },
+};
+
 pub const Window = struct {
     pub const Handle = *anyopaque;
     pub const Config = struct {
@@ -55,6 +59,8 @@ pub const Window = struct {
         resizable: bool = true,
         title: [:0]const u8 = "",
     };
+
+    pub const ResizeCallback = *const fn (ctx: ?*anyopaque, window: ?Window.Handle, width: u32, height: u32) callconv(.C) void;
 
     handle: Handle,
 
@@ -70,8 +76,8 @@ pub const Window = struct {
         return Engine_Window_Surface(window, ctx);
     }
 
-    pub inline fn onResize(window: *Window, callback: *const fn (?Window.Handle, c_int, c_int) callconv(.C) void) void {
-        Engine_Window_On_Resize(window, callback);
+    pub inline fn onResize(window: *Window, ctx: ?*anyopaque, callback: ResizeCallback) void {
+        Engine_Window_On_Resize(window, ctx, callback);
     }
 
     pub inline fn getSize(window: *Window) struct { width: u32, height: u32 } {
@@ -93,5 +99,5 @@ extern fn Engine_Window_Close(*Engine, *Window) void;
 extern fn Engine_Window_ShouldClose(*Window) bool;
 extern fn Engine_Window_SetTitle(*Window, [*:0]const u8) void;
 extern fn Engine_Window_Surface(*Window, *anyopaque) ?*anyopaque;
-extern fn Engine_Window_On_Resize(*Window, *const fn (handle: ?Window.Handle, width: c_int, height: c_int) callconv(.C) void) callconv(.C) void;
+extern fn Engine_Window_On_Resize(*Window, ?*anyopaque, Window.ResizeCallback) void;
 extern fn Engine_Window_Get_Size(*Window) extern struct { width: u32, height: u32 };
