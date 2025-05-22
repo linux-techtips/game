@@ -1,3 +1,4 @@
+const math = @import("math");
 const std = @import("std");
 const gpu = @import("gpu");
 
@@ -36,9 +37,12 @@ const index_data = [_]u16{
 };
 
 const Uniform = extern struct {
-    color: @Vector(4, f32),
+    projection: math.Mat,
+    view: math.Mat,
+    model: math.Mat,
+    color: math.F32x4,
     time: f32,
-    ratio: f32,
+    _pad: [3]f32 = undefined,
 };
 
 export fn Plug_Startup(engine: *Engine) ?*State {
@@ -156,13 +160,40 @@ fn render(engine: *Engine, state: *State) void {
 
     const encoder = state.device.createCommandEncoder(&.{}).?;
 
+    const fov = 45.0 * std.math.pi / 180.0;
+    const near: f32 = 0.01;
+    const far: f32 = 100.0;
+    const ratio = blk: {
+        const width, const height = state.window.size();
+        break :blk @as(f32, @floatFromInt(width)) / @as(f32, @floatFromInt(height));
+    };
+
+    const time: f32 = @floatCast(engine.time());
+
+    const model_scale = math.scaling(0.3, 0.3, 0.3);
+    const model_trans = math.translation(0.5, 0.0, 0.0);
+    const model_rotat = math.rotationZ(time);
+
+    const model = math.mul(model_rotat, math.mul(model_trans, model_scale));
+
+    const view_angle: f32 = 3.0 * std.math.pi / 4.0; // 135 degrees
+    // const view_rotat = math.Mat{
+    //     .{ 0.0, 1.0, 0.0, 0.0 },
+    //     .{ std.math.cos(view_angle), 0.0, -std.math.sin(view_angle), 0.0 },
+    //     .{ std.math.sin(view_angle), 0.0, std.math.cos(view_angle), 0.0 },
+    //     .{ 0.0, 0.0, 0.0, 1.0 },
+    // };
+    const view_rotat = math.rotationX(-view_angle);
+    const view_trans = math.translation(0.0, 0.0, 2.0);
+
+    const view = math.mul(view_rotat, view_trans);
+
     const uniform = Uniform{
-        .time = @floatCast(engine.time()),
-        .ratio = blk: {
-            const width, const height = state.window.size();
-            break :blk @as(f32, @floatFromInt(width)) / @as(f32, @floatFromInt(height));
-        },
+        .time = time,
         .color = .{ 0.0, 1.0, 0.4, 1.0 },
+        .projection = math.perspectiveFovLh(fov, ratio, near, far),
+        .model = model,
+        .view = view,
     };
 
     state.queue.writeBuffer(state.vertex_buffer, 0, &vertex_data, @sizeOf(@TypeOf(vertex_data)));

@@ -6,8 +6,10 @@ pub fn build(b: *std.Build) void {
 
     const wgpu_dep = b.dependency("wgpu_native_zig", .{
         .target = target,
+        .optimize = optimize,
         .link_mode = .dynamic,
     });
+    const zmath_dep = b.dependency("zmath", .{});
 
     const engine_mod = b.addModule("Engine", .{
         .root_source_file = b.path("engine/Engine.zig"),
@@ -33,9 +35,11 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .target = target,
         .name = "game",
+        .pic = true,
     });
 
     game_lib.root_module.addImport("gpu", wgpu_dep.module("wgpu"));
+    game_lib.root_module.addImport("math", zmath_dep.module("root"));
     game_lib.root_module.addImport("Engine", engine_mod);
     game_lib.linkSystemLibrary("wgpu_native");
 
