@@ -34,22 +34,38 @@ pub const Plugin = struct {
     pub fn load(path: [:0]const u8) !struct { Plugin, VTable } {
         Engine.log.info("loading plugin - '{s}'", .{std.fs.path.basename(path)});
 
-        var plugin = Plugin{ .path = path, .lib = try std.DynLib.open(path) };
-        const vtable = try VTable.lookup(&plugin.lib, plugin.path);
+        var lib = std.DynLib.open(path) catch |err| {
+            Engine.log.debug("{?s}\n", .{std.c.dlerror()});
+            return err;
+        };
+
+        const plugin = Plugin{ .path = path, .lib = lib };
+        const vtable = try VTable.lookup(&lib, plugin.path);
 
         return .{ plugin, vtable };
     }
 
     pub fn unload(plugin: *Plugin) void {
         Engine.log.info("unloading plugin - '{s}'", .{std.fs.path.basename(plugin.path)});
+
+        var buf: [std.fs.max_path_bytes]u8 = undefined;
+        const path = std.fmt.bufPrintZ(&buf, "{s}.0", .{plugin.path}) catch unreachable;
+
+        std.fs.cwd().deleteFileZ(path) catch {};
+
         plugin.lib.close();
     }
 
-    pub fn reload(plugin: *Plugin) Error!VTable {
+    pub fn reload(plugin: *Plugin) !VTable {
         Engine.log.info("reloading plugin - '{s}'", .{std.fs.path.basename(plugin.path)});
 
+        var buf: [std.fs.max_path_bytes]u8 = undefined;
+        const path = try std.fmt.bufPrintZ(&buf, "{s}.0", .{plugin.path});
+
         plugin.lib.close();
-        plugin.lib = try std.DynLib.open(plugin.path);
+        std.fs.cwd().copyFile(plugin.path, std.fs.cwd(), path, .{}) catch unreachable;
+
+        plugin.lib = try std.DynLib.open(path);
 
         return VTable.lookup(&plugin.lib, plugin.path);
     }

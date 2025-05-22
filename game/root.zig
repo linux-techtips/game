@@ -17,23 +17,36 @@ const State = struct {
     pipeline: ?*gpu.RenderPipeline,
     bindgroup: ?*gpu.BindGroup,
 };
-
 const vertex_data = [_]f32{
-    -0.5, -0.5, -0.3, 1.0, 1.0, 1.0,
-    0.5,  -0.5, -0.3, 1.0, 1.0, 1.0,
-    0.5,  0.5,  -0.3, 1.0, 1.0, 1.0,
-    -0.5, 0.5,  -0.3, 1.0, 1.0, 1.0,
+    -0.5, -0.5, -0.3, 0.0,    -1.0,   0.0,  1.0, 1.0, 1.0,
+    0.5,  -0.5, -0.3, 0.0,    -1.0,   0.0,  1.0, 1.0, 1.0,
+    0.5,  0.5,  -0.3, 0.0,    -1.0,   0.0,  1.0, 1.0, 1.0,
+    -0.5, 0.5,  -0.3, 0.0,    -1.0,   0.0,  1.0, 1.0, 1.0,
 
-    0.0,  0.0,  0.5,  0.5, 0.5, 0.5,
+    -0.5, -0.5, -0.3, 0.0,    -0.848, 0.53, 1.0, 1.0, 1.0,
+    0.5,  -0.5, -0.3, 0.0,    -0.848, 0.53, 1.0, 1.0, 1.0,
+    0.0,  0.0,  0.5,  0.0,    -0.848, 0.53, 1.0, 1.0, 1.0,
+
+    0.5,  -0.5, -0.3, 0.848,  0.0,    0.53, 1.0, 1.0, 1.0,
+    0.5,  0.5,  -0.3, 0.848,  0.0,    0.53, 1.0, 1.0, 1.0,
+    0.0,  0.0,  0.5,  0.848,  0.0,    0.53, 1.0, 1.0, 1.0,
+
+    0.5,  0.5,  -0.3, 0.0,    0.848,  0.53, 1.0, 1.0, 1.0,
+    -0.5, 0.5,  -0.3, 0.0,    0.848,  0.53, 1.0, 1.0, 1.0,
+    0.0,  0.0,  0.5,  0.0,    0.848,  0.53, 1.0, 1.0, 1.0,
+
+    -0.5, 0.5,  -0.3, -0.848, 0.0,    0.53, 1.0, 1.0, 1.0,
+    -0.5, -0.5, -0.3, -0.848, 0.0,    0.53, 1.0, 1.0, 1.0,
+    0.0,  0.0,  0.5,  -0.848, 0.0,    0.53, 1.0, 1.0, 1.0,
 };
 
 const index_data = [_]u16{
-    0, 1, 2,
-    0, 2, 3,
-    0, 1, 4,
-    1, 2, 4,
-    2, 3, 4,
-    3, 0, 4,
+    0,  1,  2,
+    0,  2,  3,
+    4,  5,  6,
+    7,  8,  9,
+    10, 11, 12,
+    13, 14, 15,
 };
 
 const Uniform = extern struct {
@@ -48,7 +61,7 @@ const Uniform = extern struct {
 export fn Plug_Startup(engine: *Engine) ?*State {
     var state = engine.allocator.create(State) catch return null;
 
-    state.window = Window.open(.{ .title = "Game", .size = .{ 1200, 720 } }) catch unreachable;
+    state.window = Window.open(.{ .title = "Game", .size = .{ 1200, 720 } }) orelse unreachable;
 
     state.depth_texture_view = null;
     state.pipeline = null;
@@ -57,7 +70,7 @@ export fn Plug_Startup(engine: *Engine) ?*State {
     const instance = gpu.Instance.create(&.{}).?;
     defer instance.release();
 
-    state.surface = state.window.surface(instance);
+    state.surface = state.window.surface(instance).?;
 
     const adapter = blk: {
         const resp = instance.requestAdapterSync(&.{
@@ -118,7 +131,10 @@ export fn Plug_Shutdown(engine: *Engine, state: *State) void {
 
 export fn Plug_Update(engine: *Engine, state: *State) bool {
     loop: for (engine.poll()) |event| switch (event) {
-        .window_close => |window| if (window == state.window) return false,
+        .window_close => |window| {
+            std.debug.print("{?*}", .{window});
+            if (window == state.window) return false;
+        },
         .window_resize => |e| {
             if (e.window != state.window) continue :loop;
 
@@ -177,12 +193,6 @@ fn render(engine: *Engine, state: *State) void {
     const model = math.mul(model_rotat, math.mul(model_trans, model_scale));
 
     const view_angle: f32 = 3.0 * std.math.pi / 4.0; // 135 degrees
-    // const view_rotat = math.Mat{
-    //     .{ 0.0, 1.0, 0.0, 0.0 },
-    //     .{ std.math.cos(view_angle), 0.0, -std.math.sin(view_angle), 0.0 },
-    //     .{ std.math.sin(view_angle), 0.0, std.math.cos(view_angle), 0.0 },
-    //     .{ 0.0, 0.0, 0.0, 1.0 },
-    // };
     const view_rotat = math.rotationX(-view_angle);
     const view_trans = math.translation(0.0, 0.0, 2.0);
 
@@ -204,6 +214,7 @@ fn render(engine: *Engine, state: *State) void {
         gpu.ColorAttachment{
             .view = surface_view,
             .clear_value = .{},
+            // .clear_value = .{ .r = 0.2, .g = 0.2, .b = 0.2, .a = 1.0 },
         },
     };
 
@@ -269,11 +280,16 @@ fn loaded(_: *Engine, state: *State) void {
             .format = .float32x3,
             .offset = 3 * @sizeOf(f32),
         },
+        gpu.VertexAttribute{
+            .shader_location = 2,
+            .format = .float32x3,
+            .offset = 6 * @sizeOf(f32),
+        },
     };
 
     const vertex_layouts = [_]gpu.VertexBufferLayout{
         gpu.VertexBufferLayout{
-            .array_stride = 6 * @sizeOf(f32),
+            .array_stride = 9 * @sizeOf(f32),
             .attribute_count = vertex_attributes.len,
             .attributes = &vertex_attributes,
         },

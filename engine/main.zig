@@ -5,7 +5,7 @@ pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
 
-    var engine = Engine.init(arena.allocator()).?;
+    var engine = Engine.init(arena.allocator());
     defer engine.deinit();
 
     var plugin, var game = try Engine.Plugin.load("./zig-out/lib/libgame.so");

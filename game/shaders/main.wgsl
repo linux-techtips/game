@@ -1,6 +1,7 @@
 struct VertexInput {
     @location(0) position: vec3f,
-    @location(1) color: vec3f,
+    @location(1) normal: vec3f,
+    @location(2) color: vec3f,
 };
 
 struct VertexOutput {
@@ -32,5 +33,5 @@ fn vert(in: VertexInput) -> VertexOutput {
 fn frag(in: VertexOutput) -> @location(0) vec4f {
     let color = in.color * uni.color.rgb;
     let linear = pow(color, vec3f(2.2));
-    return vec4f(linear, 1.0);
+    return vec4f(color, 1.0);
 }

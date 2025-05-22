@@ -19,6 +19,25 @@ pub fn build(b: *std.Build) void {
 
     engine_mod.addImport("gpu", wgpu_dep.module("wgpu"));
 
+    const platform_mod = b.addModule("platform", .{
+        .root_source_file = b.path("platform/linux-glfw.zig"),
+        .optimize = optimize,
+        .target = target,
+        .pic = true,
+    });
+
+    platform_mod.addImport("gpu", wgpu_dep.module("wgpu"));
+    platform_mod.addImport("Engine", engine_mod);
+
+    const platform_lib = b.addSharedLibrary(.{
+        .root_module = platform_mod,
+        .name = "platform",
+    });
+
+    platform_lib.linkSystemLibrary("wgpu_native");
+    platform_lib.linkSystemLibrary("glfw");
+    platform_lib.linkLibC();
+
     const engine_exe = b.addExecutable(.{
         .root_source_file = b.path("engine/main.zig"),
         .optimize = optimize,
@@ -26,9 +45,7 @@ pub fn build(b: *std.Build) void {
         .name = "engine",
     });
 
-    engine_exe.linkSystemLibrary("wgpu_native");
-    engine_exe.linkSystemLibrary("glfw");
-    engine_exe.linkLibC();
+    engine_exe.linkLibrary(platform_lib);
 
     const game_lib = b.addSharedLibrary(.{
         .root_source_file = b.path("game/root.zig"),
@@ -43,10 +60,16 @@ pub fn build(b: *std.Build) void {
     game_lib.root_module.addImport("Engine", engine_mod);
     game_lib.linkSystemLibrary("wgpu_native");
 
+    const platform_install = b.addInstallArtifact(platform_lib, .{});
+
     const game_install = b.addInstallArtifact(game_lib, .{});
 
     const engine_install = b.addInstallArtifact(engine_exe, .{});
+    engine_install.step.dependOn(&platform_install.step);
     engine_install.step.dependOn(&game_install.step);
+
+    const platform_step = b.step("platform", "compile the engine platform");
+    platform_step.dependOn(&platform_install.step);
 
     const game_step = b.step("game", "compile the game library");
     game_step.dependOn(&game_install.step);
