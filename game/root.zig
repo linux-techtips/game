@@ -12,15 +12,16 @@ const State = struct {
     uniform_buffer: *gpu.Buffer,
     time: f64,
 
+    depth_texture_view: ?*gpu.TextureView,
     pipeline: ?*gpu.RenderPipeline,
     bindgroup: ?*gpu.BindGroup,
 };
 
 const vertex_data = [_]f32{
-    -0.5, -0.5, -0.3, 1.0, 0.0, 0.0,
-    0.5,  -0.5, -0.3, 0.0, 1.0, 0.0,
-    0.5,  0.5,  -0.3, 0.0, 0.0, 1.0,
-    -0.5, 0.5,  -0.3, 1.0, 0.0, 0.0,
+    -0.5, -0.5, -0.3, 1.0, 1.0, 1.0,
+    0.5,  -0.5, -0.3, 1.0, 1.0, 1.0,
+    0.5,  0.5,  -0.3, 1.0, 1.0, 1.0,
+    -0.5, 0.5,  -0.3, 1.0, 1.0, 1.0,
 
     0.0,  0.0,  0.5,  0.5, 0.5, 0.5,
 };
@@ -34,11 +35,18 @@ const index_data = [_]u16{
     3, 0, 4,
 };
 
+const Uniform = extern struct {
+    color: @Vector(4, f32),
+    time: f32,
+    ratio: f32,
+};
+
 export fn Plug_Startup(engine: *Engine) ?*State {
     var state = engine.allocator.create(State) catch return null;
 
     state.window = Window.open(.{ .title = "Game", .size = .{ 1200, 720 } }) catch unreachable;
 
+    state.depth_texture_view = null;
     state.pipeline = null;
     state.bindgroup = null;
 
@@ -66,15 +74,6 @@ export fn Plug_Startup(engine: *Engine) ?*State {
 
     state.queue = state.device.getQueue().?;
 
-    const size = state.window.size();
-    state.surface.configure(&.{
-        .width = size[0],
-        .height = size[1],
-        .format = .bgra8_unorm_srgb,
-        .present_mode = .fifo,
-        .device = state.device,
-    });
-
     state.vertex_buffer = state.device.createBuffer(&.{
         .label = "Vertex Data",
         .usage = gpu.BufferUsage.copy_dst | gpu.BufferUsage.vertex,
@@ -90,7 +89,7 @@ export fn Plug_Startup(engine: *Engine) ?*State {
     state.uniform_buffer = state.device.createBuffer(&.{
         .label = "Uniform Data",
         .usage = gpu.BufferUsage.copy_dst | gpu.BufferUsage.uniform,
-        .size = 256 + (8 * @sizeOf(f32)),
+        .size = @sizeOf(Uniform),
     }).?;
 
     loaded(engine, state);
@@ -101,6 +100,7 @@ export fn Plug_Startup(engine: *Engine) ?*State {
 export fn Plug_Shutdown(engine: *Engine, state: *State) void {
     state.pipeline.?.release();
     state.bindgroup.?.release();
+    state.depth_texture_view.?.release();
     state.uniform_buffer.release();
     state.index_buffer.release();
     state.vertex_buffer.release();
@@ -117,6 +117,8 @@ export fn Plug_Update(engine: *Engine, state: *State) bool {
         .window_close => |window| if (window == state.window) return false,
         .window_resize => |e| {
             if (e.window != state.window) continue :loop;
+
+            makeDepthTexture(state, .depth24_plus, .{ e.width, e.height });
             state.surface.configure(&.{
                 .width = e.width,
                 .height = e.height,
@@ -129,13 +131,19 @@ export fn Plug_Update(engine: *Engine, state: *State) bool {
         else => continue :loop,
     };
 
+    render(engine, state);
+
+    return true;
+}
+
+fn render(engine: *Engine, state: *State) void {
     const surface_texture = blk: {
         var res: gpu.SurfaceTexture = undefined;
         state.surface.getCurrentTexture(&res);
 
         break :blk switch (res.status) {
             .success => res.texture,
-            .timeout => return true,
+            .timeout => @panic("ruh roh"),
             else => |status| std.debug.panic("{s}", .{@tagName(status)}),
         };
     };
@@ -148,22 +156,40 @@ export fn Plug_Update(engine: *Engine, state: *State) bool {
 
     const encoder = state.device.createCommandEncoder(&.{}).?;
 
-    const time: f32 = @floatCast(engine.time());
-    const width, const height = state.window.size();
-    const ratio = @as(f32, @floatFromInt(width)) / @as(f32, @floatFromInt(height));
+    const uniform = Uniform{
+        .time = @floatCast(engine.time()),
+        .ratio = blk: {
+            const width, const height = state.window.size();
+            break :blk @as(f32, @floatFromInt(width)) / @as(f32, @floatFromInt(height));
+        },
+        .color = .{ 0.0, 1.0, 0.4, 1.0 },
+    };
 
     state.queue.writeBuffer(state.vertex_buffer, 0, &vertex_data, @sizeOf(@TypeOf(vertex_data)));
     state.queue.writeBuffer(state.index_buffer, 0, &index_data, @sizeOf(@TypeOf(index_data)));
-    state.queue.writeBuffer(state.uniform_buffer, 0, &time, @sizeOf(f32));
-    state.queue.writeBuffer(state.uniform_buffer, 256, &ratio, @sizeOf(f32));
+    state.queue.writeBuffer(state.uniform_buffer, 0, &uniform, @sizeOf(Uniform));
+
+    const color_attachments = [_]gpu.ColorAttachment{
+        gpu.ColorAttachment{
+            .view = surface_view,
+            .clear_value = .{},
+        },
+    };
+
+    const depth_attachment = gpu.DepthStencilAttachment{
+        .view = state.depth_texture_view.?,
+        .depth_clear_value = 1.0,
+        .depth_load_op = .clear,
+        .depth_store_op = .store,
+        .stencil_load_op = .clear,
+        .stencil_store_op = .store,
+        .stencil_read_only = @intFromBool(true),
+    };
 
     const render_pass = encoder.beginRenderPass(&.{
-        .color_attachment_count = 1,
-        .color_attachments = &.{.{
-            .view = surface_view,
-            // .clear_value = .{ .r = 1.0, .g = 0.2, .b = 0.2 },
-            .clear_value = .{},
-        }},
+        .color_attachment_count = color_attachments.len,
+        .color_attachments = &color_attachments,
+        .depth_stencil_attachment = &depth_attachment,
     }).?;
 
     render_pass.setPipeline(state.pipeline.?);
@@ -186,12 +212,12 @@ export fn Plug_Update(engine: *Engine, state: *State) bool {
     defer surface_view.release();
 
     _ = state.device.poll(false, null);
-    return true;
 }
 
 fn loaded(_: *Engine, state: *State) void {
     if (state.pipeline) |pipeline| pipeline.release();
     if (state.bindgroup) |bindgroup| bindgroup.release();
+    if (state.depth_texture_view) |depth_texture_view| depth_texture_view.release();
 
     const shader_desc = gpu.ShaderModuleWGSLDescriptor{
         .chain = .{ .s_type = .shader_module_wgsl_descriptor },
@@ -243,21 +269,14 @@ fn loaded(_: *Engine, state: *State) void {
         .target_count = fragment_targets.len,
     };
 
-    const bindgroup_layout_entries = [_]gpu.BindGroupLayoutEntry{ gpu.BindGroupLayoutEntry{
+    const bindgroup_layout_entries = [_]gpu.BindGroupLayoutEntry{gpu.BindGroupLayoutEntry{
         .binding = 0,
-        .visibility = gpu.ShaderStage.vertex,
+        .visibility = gpu.ShaderStage.vertex | gpu.ShaderStage.fragment,
         .buffer = .{
             .type = .uniform,
-            .min_binding_size = 4 * @sizeOf(f32),
+            .min_binding_size = @sizeOf(Uniform),
         },
-    }, gpu.BindGroupLayoutEntry{
-        .binding = 1,
-        .visibility = gpu.ShaderStage.vertex,
-        .buffer = .{
-            .type = .uniform,
-            .min_binding_size = 4 * @sizeOf(f32),
-        },
-    } };
+    }};
 
     const bindgroup_layout = state.device.createBindGroupLayout(&.{
         .entry_count = bindgroup_layout_entries.len,
@@ -269,13 +288,7 @@ fn loaded(_: *Engine, state: *State) void {
         gpu.BindGroupEntry{
             .binding = 0,
             .buffer = state.uniform_buffer,
-            .size = 4 * @sizeOf(u32),
-        },
-        gpu.BindGroupEntry{
-            .binding = 1,
-            .buffer = state.uniform_buffer,
-            .offset = 256,
-            .size = 4 * @sizeOf(f32),
+            .size = @sizeOf(Uniform),
         },
     };
 
@@ -291,12 +304,53 @@ fn loaded(_: *Engine, state: *State) void {
     }).?;
     defer layout.release();
 
+    const depth_format = gpu.TextureFormat.depth24_plus;
+    const depth_stencil_state = gpu.DepthStencilState{
+        .depth_compare = .less,
+        .depth_write_enabled = @intFromBool(true),
+        .format = depth_format,
+        .stencil_read_mask = 0,
+        .stencil_write_mask = 0,
+        .stencil_back = .{},
+        .stencil_front = .{},
+    };
+
+    const size = state.window.size();
+    makeDepthTexture(state, depth_format, size);
+    state.surface.configure(&.{
+        .width = size[0],
+        .height = size[1],
+        .format = .bgra8_unorm_srgb,
+        .present_mode = .fifo,
+        .device = state.device,
+    });
+
     state.pipeline = state.device.createRenderPipeline(&.{
         .layout = layout,
         .vertex = vertex_state,
         .fragment = &fragment_state,
+        .depth_stencil = &depth_stencil_state,
         .primitive = .{},
         .multisample = .{},
+    }).?;
+}
+
+fn makeDepthTexture(state: *State, format: gpu.TextureFormat, size: struct { u32, u32 }) void {
+    const depth_texture = state.device.createTexture(&.{
+        .format = format,
+        .size = .{ .width = size[0], .height = size[1] },
+        .usage = gpu.TextureUsage.render_attachment,
+        .view_format_count = 1,
+        .view_formats = @ptrCast(&format),
+    }).?;
+    defer depth_texture.release();
+
+    state.depth_texture_view = depth_texture.createView(&.{
+        .aspect = .depth_only,
+        .array_layer_count = 1,
+        .mip_level_count = 1,
+        .dimension = .@"2d",
+        .format = format,
     }).?;
 }
 

@@ -8,15 +8,40 @@ struct VertexOutput {
     @location(0) color: vec3f,
 }
 
-@group(0) @binding(0) var<uniform> time: f32;
-@group(0) @binding(1) var<uniform> ratio: f32;
+struct Uniform {
+    color: vec4f,
+    time: f32,
+    ratio: f32,
+};
+
+@group(0) @binding(0) var<uniform> uniform: Uniform;
 
 @vertex
 fn vert(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
 
-	out.position = vec4f(in.position.x, in.position.y * ratio, 0.0, 1.0);
+    var angle = uniform.time;
+    var S = sin(angle);
+    var C = cos(angle);
 
+    let R1 = transpose(mat3x3f(
+        C, S, 0.0,
+        -S, C, 0.0,
+        0.0, 0.0, 1.0,
+    ));
+
+    angle = 3.0 * 3.1459 / 4;
+    S = sin(angle);
+    C = cos(angle);
+    let R2 = transpose(mat3x3f(
+        1.0, 0.0, 0.0,
+        0.0, C, S,
+        0, -S, C
+    ));
+
+    let position = R2 * R1 * in.position;
+
+	out.position = vec4f(position.x, position.y * uniform.ratio, position.z * 0.5 + 0.5, 1.0);
     out.color = in.color;
 
     return out;
@@ -24,5 +49,7 @@ fn vert(in: VertexInput) -> VertexOutput {
 
 @fragment
 fn frag(in: VertexOutput) -> @location(0) vec4f {
-    return vec4f(in.color, 1.0);
+    let color = in.color * uniform.color.rgb;
+    let linear = pow(color, vec3f(2.2));
+    return vec4f(linear, 1.0);
 }
