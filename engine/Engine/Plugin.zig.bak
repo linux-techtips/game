@@ -29,7 +29,7 @@ const VTable = struct {
         inline for (std.meta.fields(VTable)) |field| {
             const name = "Plug_" ++ [1]u8{std.ascii.toUpper(field.name[0])} ++ field.name[1..];
             @field(vtable, field.name) = lib.lookup(field.type, name) orelse {
-                log.err("failed to load plugin method: '{s}'", .{name});
+                Engine.log.err("failed to load plugin method: '{s}'", .{name});
                 return Error.missing_method;
             };
         }
@@ -39,7 +39,7 @@ const VTable = struct {
 };
 
 pub fn load(path: [:0]const u8) !Plugin {
-    log.debug("loading plugin '{s}'...", .{std.fs.path.basename(path)});
+    Engine.log.debug("loading plugin '{s}'...", .{std.fs.path.basename(path)});
     var lib = try std.DynLib.open(path);
 
     return .{
@@ -50,16 +50,13 @@ pub fn load(path: [:0]const u8) !Plugin {
 }
 
 pub fn unload(plugin: *Plugin) void {
-    log.debug("unloading plugin '{s}'...", .{std.fs.path.basename(plugin.path)});
+    Engine.log.debug("unloading plugin '{s}'...", .{std.fs.path.basename(plugin.path)});
     plugin.lib.close();
 }
 
 pub fn reload(plugin: *Plugin) !void {
-    log.debug("reloading plugin '{s}'...", .{std.fs.path.basename(plugin.path)});
+    Engine.log.debug("reloading plugin '{s}'...", .{std.fs.path.basename(plugin.path)});
     plugin.lib.close();
     plugin.lib = try std.DynLib.open(plugin.path);
     plugin.vtable = try VTable.lookup(&plugin.lib);
 }
-
-const root = @import("root");
-const log = if (@hasDecl(root, "log")) root.log else std.log.scoped(.plugin);
