@@ -38,8 +38,6 @@ pub fn move(cam: *Camera, key: Event.Key, dt: f32) void {
     if (key == .s) cam.pos -= cam.dir * veloc;
 
     cam.pos[1] = 0;
-
-    std.debug.print("x: {d:.2} z: {d:.2}\n", .{ cam.pos[0], cam.pos[2] });
 }
 
 pub fn look(cam: *Camera, x: f32, y: f32, dt: f32) void {
@@ -59,8 +57,6 @@ pub fn look(cam: *Camera, x: f32, y: f32, dt: f32) void {
 
     cam.right = vec3(zlm.normalize3(zlm.cross3(vec4(cam.dir), vec4(cam.up))));
     cam.up = vec3(zlm.normalize3(zlm.cross3(vec4(cam.right), vec4(cam.dir))));
-
-    std.debug.print("yaw: {d:.2} pitch: {d:.2}\n", .{ cam.eul.yaw, cam.eul.pitch });
 }
 
 pub const Projection = struct {

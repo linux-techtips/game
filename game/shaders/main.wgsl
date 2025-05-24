@@ -11,20 +11,18 @@ struct VertexOutput {
 }
 
 struct Uniform {
-    proj: mat4x4f,
-    view: mat4x4f,
     model: mat4x4f,
-    color: vec4f,
     time: f32,
 };
 
-@group(0) @binding(0) var<uniform> uni: Uniform;
+@group(0) @binding(0) var<uniform> cam: mat4x4f;
+@group(1) @binding(0) var<uniform> uni: Uniform;
 
 @vertex
 fn vert(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
 
-    out.position = uni.proj * uni.view * uni.model * vec4f(in.position, 1.0);
+    out.position = cam * uni.model * vec4f(in.position, 1.0);
     out.color = in.color;
     out.normal = (uni.model * vec4f(in.normal, 0.0)).xyz;
 
