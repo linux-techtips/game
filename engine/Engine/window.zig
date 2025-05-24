@@ -24,8 +24,33 @@ pub const Window = opaque {
         return Engine_Window_Surface(window, instance);
     }
 
+    pub inline fn isFocused(window: *Window) bool {
+        return Engine_Window_Isfocused(window);
+    }
+
+    pub inline fn focus(window: *Window) void {
+        Engine_Window_Focus(window);
+    }
+
+    pub inline fn unfocus(window: *Window) void {
+        Engine_Window_Unfocus(window);
+    }
+
+    pub inline fn captureCursor(window: *Window) void {
+        Engine_Window_Capture_Cursor(window);
+    }
+
+    pub inline fn uncaptureCursor(window: *Window) void {
+        Engine_Window_Uncapture_Cursor(window);
+    }
+
     extern fn Engine_Window_Open(*const Config) callconv(.C) ?*Window;
     extern fn Engine_Window_Close(*Window) callconv(.C) void;
     extern fn Engine_Window_Size(*Window) callconv(.C) extern struct { width: u32, height: u32 };
     extern fn Engine_Window_Surface(*Window, *gpu.Instance) callconv(.C) ?*gpu.Surface;
+    extern fn Engine_Window_Focus(*Window) callconv(.C) void;
+    extern fn Engine_Window_Unfocus(*Window) callconv(.C) void;
+    extern fn Engine_Window_Isfocused(*Window) callconv(.C) bool;
+    extern fn Engine_Window_Capture_Cursor(*Window) callconv(.C) void;
+    extern fn Engine_Window_Uncapture_Cursor(*Window) callconv(.C) void;
 };

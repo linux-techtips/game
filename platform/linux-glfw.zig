@@ -48,12 +48,37 @@ export fn Engine_Window_Open(config: *const Window.Config) callconv(.C) ?*Window
 
     _ = c.glfwSetFramebufferSizeCallback(handle, @ptrCast(&resizeCallback));
     _ = c.glfwSetMouseButtonCallback(handle, @ptrCast(&mousePressCallback));
-    _ = c.glfwSetCursorPosCallback(handle, @ptrCast(&mouseMoveCallback));
     _ = c.glfwSetWindowCloseCallback(handle, @ptrCast(&closeCallback));
     _ = c.glfwSetWindowFocusCallback(handle, @ptrCast(&focusCallback));
     _ = c.glfwSetKeyCallback(handle, @ptrCast(&keyPressCallback));
 
+    Engine_Window_Capture_Cursor(@ptrCast(handle));
+
     return @ptrCast(handle);
+}
+
+export fn Engine_Window_Isfocused(window: *Window) bool {
+    return c.glfwGetWindowAttrib(@ptrCast(window), c.GLFW_FOCUSED) != 0;
+}
+
+export fn Engine_Window_Focus(window: *Window) void {
+    c.glfwSetWindowAttrib(@ptrCast(window), c.GLFW_FOCUSED, c.GLFW_TRUE);
+}
+
+export fn Engine_Window_Unfocus(window: *Window) void {
+    c.glfwSetWindowAttrib(@ptrCast(window), c.GLFW_FOCUSED, c.GLFW_FALSE);
+}
+
+export fn Engine_Window_Capture_Cursor(window: *Window) void {
+    c.glfwSetInputMode(@ptrCast(window), c.GLFW_CURSOR, c.GLFW_CURSOR_DISABLED);
+
+    _ = c.glfwSetCursorPosCallback(@ptrCast(window), @ptrCast(&mouseMoveCallback));
+}
+
+export fn Engine_Window_Uncapture_Cursor(window: *Window) void {
+    c.glfwSetInputMode(@ptrCast(window), c.GLFW_CURSOR, c.GLFW_CURSOR_NORMAL);
+
+    _ = c.glfwSetCursorPosCallback(@ptrCast(window), null);
 }
 
 export fn Engine_Window_Close(window: *Window) callconv(.C) void {
@@ -82,6 +107,12 @@ export fn Engine_Window_Surface(window: *Window, instance: *gpu.Instance) ?*gpu.
     });
 }
 
+fn enterCallback(window: ?*Window, entered: c_int) void {
+    if (entered != 0) {
+        Engine_Window_Capture_Cursor(window.?);
+    }
+}
+
 fn resizeCallback(window: ?*Window, width: c_int, height: c_int) callconv(.C) void {
     var engine = globalEngine orelse return;
     engine.addEvent(.{ .window_resize = .{
@@ -100,7 +131,7 @@ fn keyPressCallback(window: ?*Window, key: c_int, _: c_int, action: c_int, mods:
     var engine = globalEngine orelse return;
     engine.addEvent(.{ .key_press = .{
         .window = window,
-        .key = @intCast(key),
+        .key = @enumFromInt(key),
         .action = @enumFromInt(action),
         .mods = @bitCast(@as(u8, @truncate(@as(u32, @intCast(mods))))),
     } });
@@ -116,12 +147,22 @@ fn mousePressCallback(window: ?*Window, button: c_int, action: c_int, mods: c_in
     } });
 }
 
+var mouse_last_x: f64 = 0;
+var mouse_last_y: f64 = 0;
+
 fn mouseMoveCallback(window: ?*Window, x: f64, y: f64) callconv(.C) void {
     var engine = globalEngine orelse return;
+
+    const delta_x = x - mouse_last_x;
+    const delta_y = y - mouse_last_y;
+
+    mouse_last_x = x;
+    mouse_last_y = y;
+
     engine.addEvent(.{ .mouse_move = .{
         .window = window,
-        .x = x,
-        .y = y,
+        .x = delta_x,
+        .y = delta_y,
     } });
 }
 

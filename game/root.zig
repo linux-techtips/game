@@ -1,43 +1,50 @@
-const math = @import("math");
 const std = @import("std");
+const zlm = @import("zlm");
 const gpu = @import("gpu");
+const obj = @import("obj");
+
+const renderer = @import("renderer.zig");
+const Camera = @import("Camera.zig");
 
 const State = struct {
     window: *Window,
-    surface: *gpu.Surface,
-    adapter: *gpu.Adapter,
-    device: *gpu.Device,
-    queue: *gpu.Queue,
+    focused: bool,
+    render_context: renderer.Context,
+
     vertex_buffer: *gpu.Buffer,
     index_buffer: *gpu.Buffer,
     uniform_buffer: *gpu.Buffer,
     time: f64,
 
-    depth_texture_view: ?*gpu.TextureView,
     pipeline: ?*gpu.RenderPipeline,
     bindgroup: ?*gpu.BindGroup,
+
+    camera: Camera,
+    cam_proj: Camera.Projection,
+    cam_uniform: ?Camera.Uniform,
 };
+
 const vertex_data = [_]f32{
-    -0.5, -0.5, -0.3, 0.0,    -1.0,   0.0,  1.0, 1.0, 1.0,
-    0.5,  -0.5, -0.3, 0.0,    -1.0,   0.0,  1.0, 1.0, 1.0,
-    0.5,  0.5,  -0.3, 0.0,    -1.0,   0.0,  1.0, 1.0, 1.0,
-    -0.5, 0.5,  -0.3, 0.0,    -1.0,   0.0,  1.0, 1.0, 1.0,
+    -0.5, -0.5, -0.3, 0.0,    -1.0,   0.0,  1.0, 0.0, 0.0,
+    0.5,  -0.5, -0.3, 0.0,    -1.0,   0.0,  0.0, 1.0, 0.0,
+    0.5,  0.5,  -0.3, 0.0,    -1.0,   0.0,  0.0, 0.0, 1.0,
+    -0.5, 0.5,  -0.3, 0.0,    -1.0,   0.0,  0.5, 0.5, 0.5,
 
-    -0.5, -0.5, -0.3, 0.0,    -0.848, 0.53, 1.0, 1.0, 1.0,
-    0.5,  -0.5, -0.3, 0.0,    -0.848, 0.53, 1.0, 1.0, 1.0,
-    0.0,  0.0,  0.5,  0.0,    -0.848, 0.53, 1.0, 1.0, 1.0,
+    -0.5, -0.5, -0.3, 0.0,    -0.848, 0.53, 1.0, 0.0, 0.0,
+    0.5,  -0.5, -0.3, 0.0,    -0.848, 0.53, 0.0, 1.0, 0.0,
+    0.0,  0.0,  0.5,  0.0,    -0.848, 0.53, 0.0, 0.0, 1.0,
 
-    0.5,  -0.5, -0.3, 0.848,  0.0,    0.53, 1.0, 1.0, 1.0,
-    0.5,  0.5,  -0.3, 0.848,  0.0,    0.53, 1.0, 1.0, 1.0,
-    0.0,  0.0,  0.5,  0.848,  0.0,    0.53, 1.0, 1.0, 1.0,
+    0.5,  -0.5, -0.3, 0.848,  0.0,    0.53, 1.0, 0.0, 0.0,
+    0.5,  0.5,  -0.3, 0.848,  0.0,    0.53, 0.0, 1.0, 0.0,
+    0.0,  0.0,  0.5,  0.848,  0.0,    0.53, 0.0, 0.0, 1.0,
 
-    0.5,  0.5,  -0.3, 0.0,    0.848,  0.53, 1.0, 1.0, 1.0,
-    -0.5, 0.5,  -0.3, 0.0,    0.848,  0.53, 1.0, 1.0, 1.0,
-    0.0,  0.0,  0.5,  0.0,    0.848,  0.53, 1.0, 1.0, 1.0,
+    0.5,  0.5,  -0.3, 0.0,    0.848,  0.53, 1.0, 0.0, 0.0,
+    -0.5, 0.5,  -0.3, 0.0,    0.848,  0.53, 0.0, 1.0, 0.0,
+    0.0,  0.0,  0.5,  0.0,    0.848,  0.53, 0.0, 0.0, 1.0,
 
-    -0.5, 0.5,  -0.3, -0.848, 0.0,    0.53, 1.0, 1.0, 1.0,
-    -0.5, -0.5, -0.3, -0.848, 0.0,    0.53, 1.0, 1.0, 1.0,
-    0.0,  0.0,  0.5,  -0.848, 0.0,    0.53, 1.0, 1.0, 1.0,
+    -0.5, 0.5,  -0.3, -0.848, 0.0,    0.53, 1.0, 0.0, 0.0,
+    -0.5, -0.5, -0.3, -0.848, 0.0,    0.53, 0.0, 1.0, 0.0,
+    0.0,  0.0,  0.5,  -0.848, 0.0,    0.53, 0.0, 0.0, 1.0,
 };
 
 const index_data = [_]u16{
@@ -50,10 +57,7 @@ const index_data = [_]u16{
 };
 
 const Uniform = extern struct {
-    projection: math.Mat,
-    view: math.Mat,
-    model: math.Mat,
-    color: math.F32x4,
+    model: zlm.Mat,
     time: f32,
     _pad: [3]f32 = undefined,
 };
@@ -62,52 +66,15 @@ export fn Plug_Startup(engine: *Engine) ?*State {
     var state = engine.allocator.create(State) catch return null;
 
     state.window = Window.open(.{ .title = "Game", .size = .{ 1200, 720 } }) orelse unreachable;
+    state.render_context = renderer.Context.init(state.window);
+    state.focused = true;
 
-    state.depth_texture_view = null;
     state.pipeline = null;
     state.bindgroup = null;
 
-    const instance = gpu.Instance.create(&.{}).?;
-    defer instance.release();
-
-    state.surface = state.window.surface(instance).?;
-
-    const adapter = blk: {
-        const resp = instance.requestAdapterSync(&.{
-            .power_preference = .high_performance,
-            .backend_type = .vulkan,
-            .compatible_surface = state.surface,
-        });
-        break :blk resp.adapter.?;
-    };
-    defer adapter.release();
-
-    state.device = blk: {
-        const resp = adapter.requestDeviceSync(&.{
-            .required_limits = null,
-        });
-        break :blk resp.device.?;
-    };
-
-    state.queue = state.device.getQueue().?;
-
-    state.vertex_buffer = state.device.createBuffer(&.{
-        .label = "Vertex Data",
-        .usage = gpu.BufferUsage.copy_dst | gpu.BufferUsage.vertex,
-        .size = @sizeOf(@TypeOf(vertex_data)),
-    }).?;
-
-    state.index_buffer = state.device.createBuffer(&.{
-        .label = "Index Data",
-        .usage = gpu.BufferUsage.copy_dst | gpu.BufferUsage.index,
-        .size = @sizeOf(@TypeOf(index_data)),
-    }).?;
-
-    state.uniform_buffer = state.device.createBuffer(&.{
-        .label = "Uniform Data",
-        .usage = gpu.BufferUsage.copy_dst | gpu.BufferUsage.uniform,
-        .size = @sizeOf(Uniform),
-    }).?;
+    state.camera = .{ .pos = @splat(0), .eul = .{} };
+    state.cam_proj = Camera.Projection.init(1200, 720, 0.01, 100, 45);
+    state.cam_uniform = null;
 
     loaded(engine, state);
 
@@ -115,16 +82,14 @@ export fn Plug_Startup(engine: *Engine) ?*State {
 }
 
 export fn Plug_Shutdown(engine: *Engine, state: *State) void {
+    state.cam_uniform.?.deinit();
     state.pipeline.?.release();
     state.bindgroup.?.release();
-    state.depth_texture_view.?.release();
     state.uniform_buffer.release();
     state.index_buffer.release();
     state.vertex_buffer.release();
-    state.queue.release();
-    state.device.release();
-    state.surface.release();
 
+    state.render_context.deinit();
     state.window.close();
     engine.allocator.destroy(state);
 }
@@ -132,20 +97,30 @@ export fn Plug_Shutdown(engine: *Engine, state: *State) void {
 export fn Plug_Update(engine: *Engine, state: *State) bool {
     loop: for (engine.poll()) |event| switch (event) {
         .window_close => |window| {
-            std.debug.print("{?*}", .{window});
             if (window == state.window) return false;
         },
         .window_resize => |e| {
             if (e.window != state.window) continue :loop;
 
-            makeDepthTexture(state, .depth24_plus, .{ e.width, e.height });
-            state.surface.configure(&.{
-                .width = e.width,
-                .height = e.height,
-                .format = .bgra8_unorm_srgb,
-                .present_mode = .fifo,
-                .device = state.device,
-            });
+            state.render_context.reconfigure(e.width, e.height);
+        },
+        .mouse_press => |e| if (e.window == state.window) {
+            if (!state.focused and e.action == .press) {
+                state.window.captureCursor();
+                state.focused = true;
+            }
+        },
+        .key_press => |e| if (e.window == state.window) {
+            if (e.key == .escape) {
+                state.window.uncaptureCursor();
+                state.focused = false;
+            }
+            if (e.action == .press or e.action == .repeat) state.camera.move(e.key, @floatCast(engine.frametime()));
+            state.cam_uniform.?.update(state.render_context.queue, state.camera, state.cam_proj);
+        },
+        .mouse_move => |e| if (e.window == state.window) {
+            state.camera.look(@floatCast(e.x), @floatCast(e.y), @floatCast(engine.frametime()));
+            state.cam_uniform.?.update(state.render_context.queue, state.camera, state.cam_proj);
         },
         .reload => loaded(engine, state),
         else => continue :loop,
@@ -157,116 +132,65 @@ export fn Plug_Update(engine: *Engine, state: *State) bool {
 }
 
 fn render(engine: *Engine, state: *State) void {
-    const surface_texture = blk: {
-        var res: gpu.SurfaceTexture = undefined;
-        state.surface.getCurrentTexture(&res);
-
-        break :blk switch (res.status) {
-            .success => res.texture,
-            .timeout => @panic("ruh roh"),
-            else => |status| std.debug.panic("{s}", .{@tagName(status)}),
-        };
-    };
-    defer surface_texture.release();
-
-    const surface_view = surface_texture.createView(&.{
-        .format = surface_texture.getFormat(),
-        .dimension = .@"2d",
-    }).?;
-
-    const encoder = state.device.createCommandEncoder(&.{}).?;
-
-    const fov = 45.0 * std.math.pi / 180.0;
-    const near: f32 = 0.01;
-    const far: f32 = 100.0;
-    const ratio = blk: {
-        const width, const height = state.window.size();
-        break :blk @as(f32, @floatFromInt(width)) / @as(f32, @floatFromInt(height));
-    };
+    const frame = renderer.Frame.begin(&state.render_context);
+    defer frame.end(&state.render_context);
 
     const time: f32 = @floatCast(engine.time());
-
-    const model_scale = math.scaling(0.3, 0.3, 0.3);
-    const model_trans = math.translation(0.5, 0.0, 0.0);
-    const model_rotat = math.rotationZ(time);
-
-    const model = math.mul(model_rotat, math.mul(model_trans, model_scale));
-
-    const view_angle: f32 = 3.0 * std.math.pi / 4.0; // 135 degrees
-    const view_rotat = math.rotationX(-view_angle);
-    const view_trans = math.translation(0.0, 0.0, 2.0);
-
-    const view = math.mul(view_rotat, view_trans);
+    const model_trans = zlm.translation(0, 0, -10);
+    const model_rotat = zlm.rotationZ(time);
+    const model = zlm.mul(model_rotat, model_trans);
 
     const uniform = Uniform{
-        .time = time,
-        .color = .{ 0.0, 1.0, 0.4, 1.0 },
-        .projection = math.perspectiveFovLh(fov, ratio, near, far),
         .model = model,
-        .view = view,
+        .time = time,
     };
 
-    state.queue.writeBuffer(state.vertex_buffer, 0, &vertex_data, @sizeOf(@TypeOf(vertex_data)));
-    state.queue.writeBuffer(state.index_buffer, 0, &index_data, @sizeOf(@TypeOf(index_data)));
-    state.queue.writeBuffer(state.uniform_buffer, 0, &uniform, @sizeOf(Uniform));
+    state.render_context.queue.writeBuffer(state.vertex_buffer, 0, &vertex_data, @sizeOf(@TypeOf(vertex_data)));
+    state.render_context.queue.writeBuffer(state.index_buffer, 0, &index_data, @sizeOf(@TypeOf(index_data)));
+    state.render_context.queue.writeBuffer(state.uniform_buffer, 0, &uniform, @sizeOf(Uniform));
 
-    const color_attachments = [_]gpu.ColorAttachment{
-        gpu.ColorAttachment{
-            .view = surface_view,
-            .clear_value = .{},
-            // .clear_value = .{ .r = 0.2, .g = 0.2, .b = 0.2, .a = 1.0 },
-        },
-    };
+    frame.render_pass.setPipeline(state.pipeline.?);
+    frame.render_pass.setVertexBuffer(0, state.vertex_buffer, 0, state.vertex_buffer.getSize());
+    frame.render_pass.setIndexBuffer(state.index_buffer, .uint16, 0, state.index_buffer.getSize());
 
-    const depth_attachment = gpu.DepthStencilAttachment{
-        .view = state.depth_texture_view.?,
-        .depth_clear_value = 1.0,
-        .depth_load_op = .clear,
-        .depth_store_op = .store,
-        .stencil_load_op = .clear,
-        .stencil_store_op = .store,
-        .stencil_read_only = @intFromBool(true),
-    };
+    frame.render_pass.setBindGroup(0, state.cam_uniform.?.bindgroup, 0, null);
+    frame.render_pass.setBindGroup(1, state.bindgroup.?, 0, null);
 
-    const render_pass = encoder.beginRenderPass(&.{
-        .color_attachment_count = color_attachments.len,
-        .color_attachments = &color_attachments,
-        .depth_stencil_attachment = &depth_attachment,
-    }).?;
-
-    render_pass.setPipeline(state.pipeline.?);
-    render_pass.setVertexBuffer(0, state.vertex_buffer, 0, state.vertex_buffer.getSize());
-    render_pass.setIndexBuffer(state.index_buffer, .uint16, 0, state.index_buffer.getSize());
-    render_pass.setBindGroup(0, state.bindgroup.?, 0, null);
-
-    render_pass.drawIndexed(index_data.len, 1, 0, 0, 0);
-
-    render_pass.end();
-    render_pass.release();
-
-    const command = encoder.finish(&.{}).?;
-    encoder.release();
-
-    state.queue.submit(&.{command});
-    command.release();
-
-    state.surface.present();
-    defer surface_view.release();
-
-    _ = state.device.poll(false, null);
+    frame.render_pass.drawIndexed(index_data.len, 1, 0, 0, 0);
 }
 
 fn loaded(_: *Engine, state: *State) void {
+    if (state.cam_uniform) |cam_uniform| cam_uniform.deinit();
     if (state.pipeline) |pipeline| pipeline.release();
     if (state.bindgroup) |bindgroup| bindgroup.release();
-    if (state.depth_texture_view) |depth_texture_view| depth_texture_view.release();
+
+    state.cam_uniform = Camera.Uniform.init(state.render_context.device);
+    state.cam_uniform.?.update(state.render_context.queue, state.camera, state.cam_proj);
+
+    state.vertex_buffer = state.render_context.device.createBuffer(&.{
+        .label = "Vertex Data",
+        .usage = gpu.BufferUsage.copy_dst | gpu.BufferUsage.vertex,
+        .size = @sizeOf(@TypeOf(vertex_data)),
+    }).?;
+
+    state.index_buffer = state.render_context.device.createBuffer(&.{
+        .label = "Index Data",
+        .usage = gpu.BufferUsage.copy_dst | gpu.BufferUsage.index,
+        .size = @sizeOf(@TypeOf(index_data)),
+    }).?;
+
+    state.uniform_buffer = state.render_context.device.createBuffer(&.{
+        .label = "Uniform Data",
+        .usage = gpu.BufferUsage.copy_dst | gpu.BufferUsage.uniform,
+        .size = @sizeOf(Uniform),
+    }).?;
 
     const shader_desc = gpu.ShaderModuleWGSLDescriptor{
         .chain = .{ .s_type = .shader_module_wgsl_descriptor },
         .code = @embedFile("shaders/main.wgsl"),
     };
 
-    const shader = state.device.createShaderModule(&.{ .next_in_chain = &shader_desc.chain }).?;
+    const shader = state.render_context.device.createShaderModule(&.{ .next_in_chain = &shader_desc.chain }).?;
     defer shader.release();
 
     const vertex_attributes = [_]gpu.VertexAttribute{
@@ -325,7 +249,7 @@ fn loaded(_: *Engine, state: *State) void {
         },
     }};
 
-    const bindgroup_layout = state.device.createBindGroupLayout(&.{
+    const bindgroup_layout = state.render_context.device.createBindGroupLayout(&.{
         .entry_count = bindgroup_layout_entries.len,
         .entries = &bindgroup_layout_entries,
     }).?;
@@ -339,15 +263,15 @@ fn loaded(_: *Engine, state: *State) void {
         },
     };
 
-    state.bindgroup = state.device.createBindGroup(&.{
+    state.bindgroup = state.render_context.device.createBindGroup(&.{
         .layout = bindgroup_layout,
         .entries = &bindgroup_entries,
         .entry_count = bindgroup_entries.len,
     }).?;
 
-    const layout = state.device.createPipelineLayout(&.{
-        .bind_group_layout_count = 1,
-        .bind_group_layouts = &.{bindgroup_layout},
+    const layout = state.render_context.device.createPipelineLayout(&.{
+        .bind_group_layout_count = 2,
+        .bind_group_layouts = &.{ state.cam_uniform.?.layout, bindgroup_layout },
     }).?;
     defer layout.release();
 
@@ -362,42 +286,13 @@ fn loaded(_: *Engine, state: *State) void {
         .stencil_front = .{},
     };
 
-    const size = state.window.size();
-    makeDepthTexture(state, depth_format, size);
-    state.surface.configure(&.{
-        .width = size[0],
-        .height = size[1],
-        .format = .bgra8_unorm_srgb,
-        .present_mode = .fifo,
-        .device = state.device,
-    });
-
-    state.pipeline = state.device.createRenderPipeline(&.{
+    state.pipeline = state.render_context.device.createRenderPipeline(&.{
         .layout = layout,
         .vertex = vertex_state,
         .fragment = &fragment_state,
         .depth_stencil = &depth_stencil_state,
         .primitive = .{},
         .multisample = .{},
-    }).?;
-}
-
-fn makeDepthTexture(state: *State, format: gpu.TextureFormat, size: struct { u32, u32 }) void {
-    const depth_texture = state.device.createTexture(&.{
-        .format = format,
-        .size = .{ .width = size[0], .height = size[1] },
-        .usage = gpu.TextureUsage.render_attachment,
-        .view_format_count = 1,
-        .view_formats = @ptrCast(&format),
-    }).?;
-    defer depth_texture.release();
-
-    state.depth_texture_view = depth_texture.createView(&.{
-        .aspect = .depth_only,
-        .array_layer_count = 1,
-        .mip_level_count = 1,
-        .dimension = .@"2d",
-        .format = format,
     }).?;
 }
 
