@@ -37,7 +37,10 @@ pub fn move(cam: *Camera, key: Event.Key, dt: f32) void {
     if (key == .w) cam.pos += cam.dir * veloc;
     if (key == .s) cam.pos -= cam.dir * veloc;
 
-    cam.pos[1] = 0;
+    // cam.pos[1] = 0;
+
+    if (key == .space) cam.pos += @Vector(3, f32){ 0, veloc[1], 0 };
+    if (key == .c) cam.pos -= @Vector(3, f32){ 0, veloc[1], 0 };
 }
 
 pub fn look(cam: *Camera, x: f32, y: f32, dt: f32) void {
@@ -55,7 +58,7 @@ pub fn look(cam: *Camera, x: f32, y: f32, dt: f32) void {
         0,
     }));
 
-    cam.right = vec3(zlm.normalize3(zlm.cross3(vec4(cam.dir), vec4(cam.up))));
+    cam.right = vec3(zlm.normalize3(zlm.cross3(vec4(cam.dir), vec4(.{ 0, 1, 0 }))));
     cam.up = vec3(zlm.normalize3(zlm.cross3(vec4(cam.right), vec4(cam.dir))));
 }
 
@@ -130,8 +133,6 @@ pub const Uniform = struct {
 
     pub fn update(uniform: *const Uniform, queue: *gpu.Queue, cam: Camera, proj: Camera.Projection) void {
         const view = zlm.mul(cam.matrix(), proj.matrix());
-        // _ = proj;
-        // const view = cam.matrix();
         queue.writeBuffer(uniform.buffer, 0, &view, @sizeOf(zlm.Mat));
     }
 

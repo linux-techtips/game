@@ -1,5 +1,14 @@
 const std = @import("std");
 
+pub fn validate_shaders(b: *std.Build, step: *std.Build.Step) void {
+    const run = b.addSystemCommand(&.{"naga"});
+    run.addFileArg(b.path("game/shaders/main.wgsl"));
+
+    _ = run.captureStdOut();
+
+    step.dependOn(&run.step);
+}
+
 pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
     const target = b.standardTargetOptions(.{});
@@ -55,6 +64,10 @@ pub fn build(b: *std.Build) void {
         .name = "game",
         .pic = true,
     });
+
+    if (b.option(bool, "validate", "validate shaders") orelse true) {
+        validate_shaders(b, &game_lib.step);
+    }
 
     game_lib.root_module.addImport("zlm", zmath_dep.module("root"));
     game_lib.root_module.addImport("gpu", wgpu_dep.module("wgpu"));

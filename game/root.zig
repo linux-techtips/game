@@ -3,13 +3,25 @@ const zlm = @import("zlm");
 const gpu = @import("gpu");
 const obj = @import("obj");
 
-const renderer = @import("renderer.zig");
+const Renderer = @import("Renderer.zig");
 const Camera = @import("Camera.zig");
+
+const vertex_data = [_]f32{
+    -0.5, 0, -0.5, 0, 0, 1, 1,   0,   0,
+    0.5,  0, -0.5, 0, 0, 1, 0,   1,   0,
+    -0.5, 0, 0.5,  0, 0, 1, 0,   0,   1,
+    0.5,  0, 0.5,  0, 0, 1, 0.2, 0.2, 0.2,
+};
+
+const index_data = [_]u16{
+    0, 1, 2,
+    1, 3, 2,
+};
 
 const State = struct {
     window: *Window,
     focused: bool,
-    render_context: renderer.Context,
+    renderer: Renderer,
 
     vertex_buffer: *gpu.Buffer,
     index_buffer: *gpu.Buffer,
@@ -24,49 +36,11 @@ const State = struct {
     cam_uniform: ?Camera.Uniform,
 };
 
-const vertex_data = [_]f32{
-    -0.5, -0.5, -0.3, 0.0,    -1.0,   0.0,  1.0, 0.0, 0.0,
-    0.5,  -0.5, -0.3, 0.0,    -1.0,   0.0,  0.0, 1.0, 0.0,
-    0.5,  0.5,  -0.3, 0.0,    -1.0,   0.0,  0.0, 0.0, 1.0,
-    -0.5, 0.5,  -0.3, 0.0,    -1.0,   0.0,  0.5, 0.5, 0.5,
-
-    -0.5, -0.5, -0.3, 0.0,    -0.848, 0.53, 1.0, 0.0, 0.0,
-    0.5,  -0.5, -0.3, 0.0,    -0.848, 0.53, 0.0, 1.0, 0.0,
-    0.0,  0.0,  0.5,  0.0,    -0.848, 0.53, 0.0, 0.0, 1.0,
-
-    0.5,  -0.5, -0.3, 0.848,  0.0,    0.53, 1.0, 0.0, 0.0,
-    0.5,  0.5,  -0.3, 0.848,  0.0,    0.53, 0.0, 1.0, 0.0,
-    0.0,  0.0,  0.5,  0.848,  0.0,    0.53, 0.0, 0.0, 1.0,
-
-    0.5,  0.5,  -0.3, 0.0,    0.848,  0.53, 1.0, 0.0, 0.0,
-    -0.5, 0.5,  -0.3, 0.0,    0.848,  0.53, 0.0, 1.0, 0.0,
-    0.0,  0.0,  0.5,  0.0,    0.848,  0.53, 0.0, 0.0, 1.0,
-
-    -0.5, 0.5,  -0.3, -0.848, 0.0,    0.53, 1.0, 0.0, 0.0,
-    -0.5, -0.5, -0.3, -0.848, 0.0,    0.53, 0.0, 1.0, 0.0,
-    0.0,  0.0,  0.5,  -0.848, 0.0,    0.53, 0.0, 0.0, 1.0,
-};
-
-const index_data = [_]u16{
-    0,  1,  2,
-    0,  2,  3,
-    4,  5,  6,
-    7,  8,  9,
-    10, 11, 12,
-    13, 14, 15,
-};
-
-const Uniform = extern struct {
-    model: zlm.Mat,
-    time: f32,
-    _pad: [3]f32 = undefined,
-};
-
 export fn Plug_Startup(engine: *Engine) ?*State {
     var state = engine.allocator.create(State) catch return null;
 
     state.window = Window.open(.{ .title = "Game", .size = .{ 1200, 720 } }) orelse unreachable;
-    state.render_context = renderer.Context.init(state.window);
+    state.renderer = Renderer.init(state.window);
     state.focused = true;
 
     state.pipeline = null;
@@ -89,7 +63,7 @@ export fn Plug_Shutdown(engine: *Engine, state: *State) void {
     state.index_buffer.release();
     state.vertex_buffer.release();
 
-    state.render_context.deinit();
+    state.renderer.deinit();
     state.window.close();
     engine.allocator.destroy(state);
 }
@@ -102,7 +76,7 @@ export fn Plug_Update(engine: *Engine, state: *State) bool {
         .window_resize => |e| {
             if (e.window != state.window) continue :loop;
 
-            state.render_context.reconfigure(e.width, e.height);
+            state.renderer.reconfigure(e.width, e.height);
         },
         .mouse_press => |e| if (e.window == state.window) {
             if (!state.focused and e.action == .press) {
@@ -116,15 +90,15 @@ export fn Plug_Update(engine: *Engine, state: *State) bool {
                 state.focused = false;
             }
             if (e.action == .press or e.action == .repeat) state.camera.move(e.key, @floatCast(engine.frametime()));
-            state.cam_uniform.?.update(state.render_context.queue, state.camera, state.cam_proj);
         },
         .mouse_move => |e| if (e.window == state.window) {
             state.camera.look(@floatCast(e.x), @floatCast(e.y), @floatCast(engine.frametime()));
-            state.cam_uniform.?.update(state.render_context.queue, state.camera, state.cam_proj);
         },
         .reload => loaded(engine, state),
         else => continue :loop,
     };
+
+    state.cam_uniform.?.update(state.renderer.queue, state.camera, state.cam_proj);
 
     render(engine, state);
 
@@ -132,27 +106,23 @@ export fn Plug_Update(engine: *Engine, state: *State) bool {
 }
 
 fn render(engine: *Engine, state: *State) void {
-    const frame = renderer.Frame.begin(&state.render_context);
-    defer frame.end(&state.render_context);
+    const frame = Renderer.beginFrame(&state.renderer);
+    defer frame.end(&state.renderer);
 
-    const time: f32 = @floatCast(engine.time());
+    // const time: f32 = @floatCast(engine.time());
+    _ = engine;
     const model_trans = zlm.translation(0, 0, -10);
-    const model_rotat = zlm.rotationZ(time);
+    const model_rotat = zlm.rotationX(std.math.degreesToRadians(90));
     const model = zlm.mul(model_rotat, model_trans);
+    // const model = model_trans;
 
-    const uniform = Uniform{
-        .model = model,
-        .time = time,
-    };
-
-    state.render_context.queue.writeBuffer(state.vertex_buffer, 0, &vertex_data, @sizeOf(@TypeOf(vertex_data)));
-    state.render_context.queue.writeBuffer(state.index_buffer, 0, &index_data, @sizeOf(@TypeOf(index_data)));
-    state.render_context.queue.writeBuffer(state.uniform_buffer, 0, &uniform, @sizeOf(Uniform));
+    state.renderer.queue.writeBuffer(state.vertex_buffer, 0, &vertex_data, @sizeOf(@TypeOf(vertex_data)));
+    state.renderer.queue.writeBuffer(state.index_buffer, 0, &index_data, @sizeOf(@TypeOf(index_data)));
+    state.renderer.queue.writeBuffer(state.uniform_buffer, 0, &model, @sizeOf(zlm.Mat));
 
     frame.render_pass.setPipeline(state.pipeline.?);
     frame.render_pass.setVertexBuffer(0, state.vertex_buffer, 0, state.vertex_buffer.getSize());
     frame.render_pass.setIndexBuffer(state.index_buffer, .uint16, 0, state.index_buffer.getSize());
-
     frame.render_pass.setBindGroup(0, state.cam_uniform.?.bindgroup, 0, null);
     frame.render_pass.setBindGroup(1, state.bindgroup.?, 0, null);
 
@@ -164,25 +134,25 @@ fn loaded(_: *Engine, state: *State) void {
     if (state.pipeline) |pipeline| pipeline.release();
     if (state.bindgroup) |bindgroup| bindgroup.release();
 
-    state.cam_uniform = Camera.Uniform.init(state.render_context.device);
-    state.cam_uniform.?.update(state.render_context.queue, state.camera, state.cam_proj);
+    state.cam_uniform = Camera.Uniform.init(state.renderer.device);
+    state.cam_uniform.?.update(state.renderer.queue, state.camera, state.cam_proj);
 
-    state.vertex_buffer = state.render_context.device.createBuffer(&.{
+    state.vertex_buffer = state.renderer.device.createBuffer(&.{
         .label = "Vertex Data",
         .usage = gpu.BufferUsage.copy_dst | gpu.BufferUsage.vertex,
         .size = @sizeOf(@TypeOf(vertex_data)),
     }).?;
 
-    state.index_buffer = state.render_context.device.createBuffer(&.{
+    state.index_buffer = state.renderer.device.createBuffer(&.{
         .label = "Index Data",
         .usage = gpu.BufferUsage.copy_dst | gpu.BufferUsage.index,
         .size = @sizeOf(@TypeOf(index_data)),
     }).?;
 
-    state.uniform_buffer = state.render_context.device.createBuffer(&.{
+    state.uniform_buffer = state.renderer.device.createBuffer(&.{
         .label = "Uniform Data",
         .usage = gpu.BufferUsage.copy_dst | gpu.BufferUsage.uniform,
-        .size = @sizeOf(Uniform),
+        .size = @sizeOf(zlm.Mat),
     }).?;
 
     const shader_desc = gpu.ShaderModuleWGSLDescriptor{
@@ -190,7 +160,7 @@ fn loaded(_: *Engine, state: *State) void {
         .code = @embedFile("shaders/main.wgsl"),
     };
 
-    const shader = state.render_context.device.createShaderModule(&.{ .next_in_chain = &shader_desc.chain }).?;
+    const shader = state.renderer.device.createShaderModule(&.{ .next_in_chain = &shader_desc.chain }).?;
     defer shader.release();
 
     const vertex_attributes = [_]gpu.VertexAttribute{
@@ -245,11 +215,11 @@ fn loaded(_: *Engine, state: *State) void {
         .visibility = gpu.ShaderStage.vertex | gpu.ShaderStage.fragment,
         .buffer = .{
             .type = .uniform,
-            .min_binding_size = @sizeOf(Uniform),
+            .min_binding_size = @sizeOf(zlm.Mat),
         },
     }};
 
-    const bindgroup_layout = state.render_context.device.createBindGroupLayout(&.{
+    const bindgroup_layout = state.renderer.device.createBindGroupLayout(&.{
         .entry_count = bindgroup_layout_entries.len,
         .entries = &bindgroup_layout_entries,
     }).?;
@@ -259,17 +229,17 @@ fn loaded(_: *Engine, state: *State) void {
         gpu.BindGroupEntry{
             .binding = 0,
             .buffer = state.uniform_buffer,
-            .size = @sizeOf(Uniform),
+            .size = @sizeOf(zlm.Mat),
         },
     };
 
-    state.bindgroup = state.render_context.device.createBindGroup(&.{
+    state.bindgroup = state.renderer.device.createBindGroup(&.{
         .layout = bindgroup_layout,
         .entries = &bindgroup_entries,
         .entry_count = bindgroup_entries.len,
     }).?;
 
-    const layout = state.render_context.device.createPipelineLayout(&.{
+    const layout = state.renderer.device.createPipelineLayout(&.{
         .bind_group_layout_count = 2,
         .bind_group_layouts = &.{ state.cam_uniform.?.layout, bindgroup_layout },
     }).?;
@@ -286,7 +256,7 @@ fn loaded(_: *Engine, state: *State) void {
         .stencil_front = .{},
     };
 
-    state.pipeline = state.render_context.device.createRenderPipeline(&.{
+    state.pipeline = state.renderer.device.createRenderPipeline(&.{
         .layout = layout,
         .vertex = vertex_state,
         .fragment = &fragment_state,
