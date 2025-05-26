@@ -6,17 +6,25 @@ const obj = @import("obj");
 const Renderer = @import("Renderer.zig");
 const Camera = @import("Camera.zig");
 
+// const vertex_data = [_]f32{
+//     -0.5, 0, -0.5, 0, 0, 1, 1,   0,   0,
+//     0.5,  0, -0.5, 0, 0, 1, 0,   1,   0,
+//     -0.5, 0, 0.5,  0, 0, 1, 0,   0,   1,
+//     0.5,  0, 0.5,  0, 0, 1, 0.2, 0.2, 0.2,
+// };
+
+// const index_data = [_]u16{
+//     0, 1, 2,
+//     1, 3, 2,
+// };
+
 const vertex_data = [_]f32{
-    -0.5, 0, -0.5, 0, 0, 1, 1,   0,   0,
-    0.5,  0, -0.5, 0, 0, 1, 0,   1,   0,
-    -0.5, 0, 0.5,  0, 0, 1, 0,   0,   1,
-    0.5,  0, 0.5,  0, 0, 1, 0.2, 0.2, 0.2,
+    0.5,  0, 0.5,  0, 1, 1, 1, 0, 0,
+    -0.5, 0, 0.5,  0, 1, 1, 0, 1, 0,
+    0,    0, -0.5, 0, 1, 1, 0, 0, 1,
 };
 
-const index_data = [_]u16{
-    0, 1, 2,
-    1, 3, 2,
-};
+const index_data = [_]u16{ 0, 1, 2, 0, 0, 0 };
 
 const State = struct {
     window: *Window,
@@ -109,15 +117,14 @@ fn render(engine: *Engine, state: *State) void {
     const frame = Renderer.beginFrame(&state.renderer);
     defer frame.end(&state.renderer);
 
-    // const time: f32 = @floatCast(engine.time());
-    _ = engine;
-    const model_trans = zlm.translation(0, 0, -10);
-    const model_rotat = zlm.rotationX(std.math.degreesToRadians(90));
-    const model = zlm.mul(model_rotat, model_trans);
-    // const model = model_trans;
+    const time: f32 = @floatCast(engine.time());
+    const model_transform = zlm.translation(0, 0.1, -2);
+    const model_rotatX = zlm.rotationX(std.math.degreesToRadians(90));
+    const model_rotatY = zlm.rotationZ(time);
+    const model = zlm.mul(model_rotatY, zlm.mul(model_rotatX, model_transform));
 
     state.renderer.queue.writeBuffer(state.vertex_buffer, 0, &vertex_data, @sizeOf(@TypeOf(vertex_data)));
-    state.renderer.queue.writeBuffer(state.index_buffer, 0, &index_data, @sizeOf(@TypeOf(index_data)));
+    // state.renderer.queue.writeBuffer(state.index_buffer, 0, &index_data, @sizeOf(@TypeOf(index_data)));
     state.renderer.queue.writeBuffer(state.uniform_buffer, 0, &model, @sizeOf(zlm.Mat));
 
     frame.render_pass.setPipeline(state.pipeline.?);
@@ -126,7 +133,8 @@ fn render(engine: *Engine, state: *State) void {
     frame.render_pass.setBindGroup(0, state.cam_uniform.?.bindgroup, 0, null);
     frame.render_pass.setBindGroup(1, state.bindgroup.?, 0, null);
 
-    frame.render_pass.drawIndexed(index_data.len, 1, 0, 0, 0);
+    // frame.render_pass.drawIndexed(index_data.len, 1, 0, 0, 0);
+    frame.render_pass.draw(3, 1, 0, 0);
 }
 
 fn loaded(_: *Engine, state: *State) void {

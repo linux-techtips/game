@@ -118,8 +118,9 @@ pub const Frame = struct {
             var res: gpu.SurfaceTexture = undefined;
             renderer.surface.getCurrentTexture(&res);
 
-            break :blk switch (res.status) {
-                .success => res.texture,
+            loop: while (true) break :blk switch (res.status) {
+                .success => break :blk res.texture,
+                .timeout => continue :loop,
                 else => |status| std.debug.panic("{s}", .{@tagName(status)}),
             };
         };
