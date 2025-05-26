@@ -1,15 +1,29 @@
 const std = @import("std");
 
-pub fn validate_shaders(b: *std.Build, step: *std.Build.Step) void {
-    const run = b.addSystemCommand(&.{"naga"});
-    run.addFileArg(b.path("game/shaders/main.wgsl"));
+pub fn validate_shaders(b: *std.Build, path: std.Build.LazyPath, step: *std.Build.Step) !void {
+    const run = b.addSystemCommand(&.{ "naga", "--bulk-validate" });
 
     _ = run.captureStdOut();
-
     step.dependOn(&run.step);
+
+    const dir_path = path.src_path.sub_path;
+    var dir = std.fs.cwd().openDir(dir_path, .{ .iterate = true }) catch |err| switch (err) {
+        error.NotDir => {
+            run.addFileArg(path);
+            return;
+        },
+        else => return err,
+    };
+    defer dir.close();
+
+    var it = dir.iterate();
+    while (try it.next()) |entry| if (entry.kind == .file) {
+        const entry_path = try std.fs.path.join(b.allocator, &.{ dir_path, entry.name });
+        run.addFileArg(b.path(entry_path));
+    };
 }
 
-pub fn build(b: *std.Build) void {
+pub fn build(b: *std.Build) !void {
     const optimize = b.standardOptimizeOption(.{});
     const target = b.standardTargetOptions(.{});
 
@@ -65,8 +79,9 @@ pub fn build(b: *std.Build) void {
         .pic = true,
     });
 
+    const shader_dir = b.option([]const u8, "shader_dir", "directory of shaders to validate.") orelse "game/shaders";
     if (b.option(bool, "validate", "validate shaders") orelse true) {
-        validate_shaders(b, &game_lib.step);
+        try validate_shaders(b, b.path(shader_dir), &game_lib.step);
     }
 
     game_lib.root_module.addImport("zlm", zmath_dep.module("root"));
