@@ -6,57 +6,31 @@ const obj = @import("obj");
 const Renderer = @import("Renderer.zig");
 const Camera = @import("Camera.zig");
 
-// const vertex_data = [_]f32{
-//     -0.5, 0, -0.5, 0, 0, 1, 1,   0,   0,
-//     0.5,  0, -0.5, 0, 0, 1, 0,   1,   0,
-//     -0.5, 0, 0.5,  0, 0, 1, 0,   0,   1,
-//     0.5,  0, 0.5,  0, 0, 1, 0.2, 0.2, 0.2,
-// };
-
-// const index_data = [_]u16{
-//     0, 1, 2,
-//     1, 3, 2,
-// };
-
-const vertex_data = [_]f32{
-    0.5,  0, 0.5,  0, 1, 1, 1, 0, 0,
-    -0.5, 0, 0.5,  0, 1, 1, 0, 1, 0,
-    0,    0, -0.5, 0, 1, 1, 0, 0, 1,
+// zig fmt: off
+const vertex_data = [_]@Vector(2, f32) {
+    .{ 0.0, 0.0 },
+    .{ 0.5, 0.6 },
+    .{ -0.7, 0.3 },
 };
-
-const index_data = [_]u16{ 0, 1, 2, 0, 0, 0 };
 
 const State = struct {
     window: *Window,
-    focused: bool,
     renderer: Renderer,
 
-    vertex_buffer: *gpu.Buffer,
-    index_buffer: *gpu.Buffer,
-    uniform_buffer: *gpu.Buffer,
-    time: f64,
-
     pipeline: ?*gpu.RenderPipeline,
-    bindgroup: ?*gpu.BindGroup,
-
-    camera: Camera,
-    cam_proj: Camera.Projection,
-    cam_uniform: ?Camera.Uniform,
+    vertex_buffer: ?*gpu.Buffer,
+    uniform: ?Uniform,
 };
 
 export fn Plug_Startup(engine: *Engine) ?*State {
     var state = engine.allocator.create(State) catch return null;
 
-    state.window = Window.open(.{ .title = "Game", .size = .{ 1200, 720 } }) orelse unreachable;
+    state.window = Window.open(.{ .title = "Game", .size = .{ 640, 480 } }) orelse unreachable;
     state.renderer = Renderer.init(state.window);
-    state.focused = true;
 
+    state.vertex_buffer = null;
     state.pipeline = null;
-    state.bindgroup = null;
-
-    state.camera = .{ .pos = @splat(0), .eul = .{} };
-    state.cam_proj = Camera.Projection.init(1200, 720, 0.01, 100, 45);
-    state.cam_uniform = null;
+    state.uniform = null;
 
     loaded(engine, state);
 
@@ -64,12 +38,9 @@ export fn Plug_Startup(engine: *Engine) ?*State {
 }
 
 export fn Plug_Shutdown(engine: *Engine, state: *State) void {
-    state.cam_uniform.?.deinit();
+    state.uniform.?.deinit();
     state.pipeline.?.release();
-    state.bindgroup.?.release();
-    state.uniform_buffer.release();
-    state.index_buffer.release();
-    state.vertex_buffer.release();
+    state.vertex_buffer.?.release();
 
     state.renderer.deinit();
     state.window.close();
@@ -78,72 +49,46 @@ export fn Plug_Shutdown(engine: *Engine, state: *State) void {
 
 export fn Plug_Update(engine: *Engine, state: *State) bool {
     loop: for (engine.poll()) |event| switch (event) {
-        .window_close => |window| {
-            if (window == state.window) return false;
+        .window_close => |window| if (window == state.window) {
+            return false;
         },
-        .window_resize => |e| {
-            if (e.window != state.window) continue :loop;
-
+        .window_resize => |e| if (e.window == state.window) {
             state.renderer.reconfigure(e.width, e.height);
-        },
-        .mouse_press => |e| if (e.window == state.window) {
-            if (!state.focused and e.action == .press) {
-                state.window.captureCursor();
-                state.focused = true;
-            }
-        },
-        .key_press => |e| if (e.window == state.window) {
-            if (e.key == .escape) {
-                state.window.uncaptureCursor();
-                state.focused = false;
-            }
-            if (e.action == .press or e.action == .repeat) state.camera.move(e.key, @floatCast(engine.frametime()));
-        },
-        .mouse_move => |e| if (e.window == state.window) {
-            state.camera.look(@floatCast(e.x), @floatCast(e.y), @floatCast(engine.frametime()));
+
+            state.uniform = Uniform.init(state.renderer.device);
+            const size: [2]f32 = blk: {
+                const width, const height = state.window.size();
+                break :blk .{ @floatFromInt(width), @floatFromInt(height) };
+            };
+
+            std.debug.print("{d:.2}\n", .{ size });
+
+            state.renderer.queue.writeBuffer(state.uniform.?.buffer, 0, &size, @sizeOf(@TypeOf(size)));
         },
         .reload => loaded(engine, state),
         else => continue :loop,
     };
-
-    state.cam_uniform.?.update(state.renderer.queue, state.camera, state.cam_proj);
 
     render(engine, state);
 
     return true;
 }
 
-fn render(engine: *Engine, state: *State) void {
+fn render(_: *Engine, state: *State) void {
     const frame = Renderer.beginFrame(&state.renderer);
     defer frame.end(&state.renderer);
 
-    const time: f32 = @floatCast(engine.time());
-    const model_transform = zlm.translation(0, 0.1, -2);
-    const model_rotatX = zlm.rotationX(std.math.degreesToRadians(90));
-    const model_rotatY = zlm.rotationZ(time);
-    const model = zlm.mul(model_rotatY, zlm.mul(model_rotatX, model_transform));
-
-    state.renderer.queue.writeBuffer(state.vertex_buffer, 0, &vertex_data, @sizeOf(@TypeOf(vertex_data)));
-    // state.renderer.queue.writeBuffer(state.index_buffer, 0, &index_data, @sizeOf(@TypeOf(index_data)));
-    state.renderer.queue.writeBuffer(state.uniform_buffer, 0, &model, @sizeOf(zlm.Mat));
-
     frame.render_pass.setPipeline(state.pipeline.?);
-    frame.render_pass.setVertexBuffer(0, state.vertex_buffer, 0, state.vertex_buffer.getSize());
-    frame.render_pass.setIndexBuffer(state.index_buffer, .uint16, 0, state.index_buffer.getSize());
-    frame.render_pass.setBindGroup(0, state.cam_uniform.?.bindgroup, 0, null);
-    frame.render_pass.setBindGroup(1, state.bindgroup.?, 0, null);
+    frame.render_pass.setVertexBuffer(0, state.vertex_buffer.?, 0, state.vertex_buffer.?.getSize());
+    frame.render_pass.setBindGroup(0, state.uniform.?.group, 0, null);
 
-    // frame.render_pass.drawIndexed(index_data.len, 1, 0, 0, 0);
-    frame.render_pass.draw(3, 1, 0, 0);
+    frame.render_pass.draw(6, vertex_data.len, 0, 0);
 }
 
 fn loaded(_: *Engine, state: *State) void {
-    if (state.cam_uniform) |cam_uniform| cam_uniform.deinit();
+    if (state.vertex_buffer) |vertex_buffer| vertex_buffer.release();
     if (state.pipeline) |pipeline| pipeline.release();
-    if (state.bindgroup) |bindgroup| bindgroup.release();
-
-    state.cam_uniform = Camera.Uniform.init(state.renderer.device);
-    state.cam_uniform.?.update(state.renderer.queue, state.camera, state.cam_proj);
+    if (state.uniform) |uniform| uniform.deinit();
 
     state.vertex_buffer = state.renderer.device.createBuffer(&.{
         .label = "Vertex Data",
@@ -151,17 +96,7 @@ fn loaded(_: *Engine, state: *State) void {
         .size = @sizeOf(@TypeOf(vertex_data)),
     }).?;
 
-    state.index_buffer = state.renderer.device.createBuffer(&.{
-        .label = "Index Data",
-        .usage = gpu.BufferUsage.copy_dst | gpu.BufferUsage.index,
-        .size = @sizeOf(@TypeOf(index_data)),
-    }).?;
-
-    state.uniform_buffer = state.renderer.device.createBuffer(&.{
-        .label = "Uniform Data",
-        .usage = gpu.BufferUsage.copy_dst | gpu.BufferUsage.uniform,
-        .size = @sizeOf(zlm.Mat),
-    }).?;
+    state.renderer.queue.writeBuffer(state.vertex_buffer.?, 0, &vertex_data, @sizeOf(@TypeOf(vertex_data)));
 
     const shader_desc = gpu.ShaderModuleWGSLDescriptor{
         .chain = .{ .s_type = .shader_module_wgsl_descriptor },
@@ -174,26 +109,17 @@ fn loaded(_: *Engine, state: *State) void {
     const vertex_attributes = [_]gpu.VertexAttribute{
         gpu.VertexAttribute{
             .shader_location = 0,
-            .format = .float32x3,
+            .format = .float32x2,
             .offset = 0,
-        },
-        gpu.VertexAttribute{
-            .shader_location = 1,
-            .format = .float32x3,
-            .offset = 3 * @sizeOf(f32),
-        },
-        gpu.VertexAttribute{
-            .shader_location = 2,
-            .format = .float32x3,
-            .offset = 6 * @sizeOf(f32),
         },
     };
 
     const vertex_layouts = [_]gpu.VertexBufferLayout{
         gpu.VertexBufferLayout{
-            .array_stride = 9 * @sizeOf(f32),
+            .array_stride = @sizeOf(@Vector(2, f32)),
             .attribute_count = vertex_attributes.len,
             .attributes = &vertex_attributes,
+            .step_mode = .instance,
         },
     };
 
@@ -218,38 +144,17 @@ fn loaded(_: *Engine, state: *State) void {
         .target_count = fragment_targets.len,
     };
 
-    const bindgroup_layout_entries = [_]gpu.BindGroupLayoutEntry{gpu.BindGroupLayoutEntry{
-        .binding = 0,
-        .visibility = gpu.ShaderStage.vertex | gpu.ShaderStage.fragment,
-        .buffer = .{
-            .type = .uniform,
-            .min_binding_size = @sizeOf(zlm.Mat),
-        },
-    }};
-
-    const bindgroup_layout = state.renderer.device.createBindGroupLayout(&.{
-        .entry_count = bindgroup_layout_entries.len,
-        .entries = &bindgroup_layout_entries,
-    }).?;
-    defer bindgroup_layout.release();
-
-    const bindgroup_entries = [_]gpu.BindGroupEntry{
-        gpu.BindGroupEntry{
-            .binding = 0,
-            .buffer = state.uniform_buffer,
-            .size = @sizeOf(zlm.Mat),
-        },
+    state.uniform = Uniform.init(state.renderer.device);
+    const size: [2]f32 = blk: {
+        const width, const height = state.window.size();
+        break :blk .{ @floatFromInt(width), @floatFromInt(height) };
     };
 
-    state.bindgroup = state.renderer.device.createBindGroup(&.{
-        .layout = bindgroup_layout,
-        .entries = &bindgroup_entries,
-        .entry_count = bindgroup_entries.len,
-    }).?;
+    state.renderer.queue.writeBuffer(state.uniform.?.buffer, 0, &size, @sizeOf(@TypeOf(size)));
 
     const layout = state.renderer.device.createPipelineLayout(&.{
-        .bind_group_layout_count = 2,
-        .bind_group_layouts = &.{ state.cam_uniform.?.layout, bindgroup_layout },
+        .bind_group_layout_count = 1,
+        .bind_group_layouts = &.{state.uniform.?.layout},
     }).?;
     defer layout.release();
 
@@ -276,3 +181,58 @@ fn loaded(_: *Engine, state: *State) void {
 
 const Engine = @import("Engine");
 const Window = Engine.Window;
+
+pub const Uniform = struct {
+    layout: *gpu.BindGroupLayout,
+    buffer: *gpu.Buffer,
+    group: *gpu.BindGroup,
+
+    pub fn init(device: *gpu.Device) Uniform {
+        const buffer = device.createBuffer(&.{
+            .usage = gpu.BufferUsage.copy_dst | gpu.BufferUsage.uniform,
+            .size = 2 * @sizeOf(f32),
+        }).?;
+        errdefer buffer.release();
+
+        const layouts = [_]gpu.BindGroupLayoutEntry{
+            gpu.BindGroupLayoutEntry{
+                .binding = 0,
+                .visibility = gpu.ShaderStage.vertex,
+                .buffer = .{ .@"type" = .uniform, .min_binding_size = 2 * @sizeOf(f32) },
+            },
+        };
+
+        const layout = device.createBindGroupLayout(&.{
+            .entry_count = layouts.len,
+            .entries = &layouts,
+        }).?;
+        errdefer layout.release();
+
+        const bindings = [_]gpu.BindGroupEntry{
+            gpu.BindGroupEntry{
+                .binding = 0,
+                .buffer = buffer,
+                .size = 2 * @sizeOf(f32),
+            },
+        };
+
+        const group = device.createBindGroup(&.{
+            .layout = layout,
+            .entry_count = 1,
+            .entries = &bindings,
+        }).?;
+        errdefer group.release();
+
+        return .{
+            .layout = layout,
+            .buffer = buffer,
+            .group = group,
+        };
+    }
+
+    pub fn deinit(uniform: *const Uniform) void {
+        uniform.group.release();
+        uniform.layout.release();
+        uniform.buffer.release();
+    }
+};

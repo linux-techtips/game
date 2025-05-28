@@ -20,6 +20,15 @@ pub const Window = opaque {
         return .{ dims.width, dims.height };
     }
 
+    pub inline fn aspect(window: *Window) f64 {
+        const width: f32, const height: f32 = blk: {
+            const dims = window.size();
+            break :blk .{ @floatFromInt(dims[0]), @floatFromInt(dims[1]) };
+        };
+
+        return width / height;
+    }
+
     pub inline fn surface(window: *Window, instance: *gpu.Instance) ?*gpu.Surface {
         return Engine_Window_Surface(window, instance);
     }

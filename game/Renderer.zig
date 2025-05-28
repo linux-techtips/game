@@ -120,7 +120,7 @@ pub const Frame = struct {
 
             loop: while (true) break :blk switch (res.status) {
                 .success => break :blk res.texture,
-                .timeout => continue :loop,
+                .timeout => continue :loop, // TODO: This is not a good solution. We need to find something else.
                 else => |status| std.debug.panic("{s}", .{@tagName(status)}),
             };
         };
@@ -142,6 +142,8 @@ pub const Frame = struct {
             .depth_clear_value = 1.0,
             .depth_load_op = .clear,
             .depth_store_op = .store,
+            .depth_read_only = @intFromBool(false),
+            .stencil_clear_value = 0,
             .stencil_load_op = .clear,
             .stencil_store_op = .store,
             .stencil_read_only = @intFromBool(true),

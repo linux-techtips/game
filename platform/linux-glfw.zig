@@ -52,8 +52,6 @@ export fn Engine_Window_Open(config: *const Window.Config) callconv(.C) ?*Window
     _ = c.glfwSetWindowFocusCallback(handle, @ptrCast(&focusCallback));
     _ = c.glfwSetKeyCallback(handle, @ptrCast(&keyPressCallback));
 
-    Engine_Window_Capture_Cursor(@ptrCast(handle));
-
     return @ptrCast(handle);
 }
 

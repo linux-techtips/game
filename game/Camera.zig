@@ -77,8 +77,15 @@ pub const Projection = struct {
         };
     }
 
-    pub fn matrix(proj: *const Projection) zlm.Mat {
+    pub fn perspective(proj: *const Projection) zlm.Mat {
         return zlm.perspectiveFovLh(proj.fov, proj.aspect, proj.near, proj.far);
+    }
+
+    pub fn orthographic(proj: *const Projection, dist: f32) zlm.Mat {
+        const height = 2 * std.math.tan(proj.fov / 2) * dist;
+        const width = height * proj.aspect;
+
+        return zlm.orthographicLh(width, height, proj.near, proj.far);
     }
 
     pub fn resize(proj: *Projection, width: u32, height: u32) void {
@@ -94,7 +101,7 @@ pub const Uniform = struct {
     pub fn init(device: *gpu.Device) Uniform {
         const buffer = device.createBuffer(&.{
             .usage = gpu.BufferUsage.copy_dst | gpu.BufferUsage.uniform,
-            .size = @sizeOf(zlm.Mat),
+            .size = 2 * @sizeOf(zlm.Mat),
         }).?;
         errdefer buffer.release();
 
@@ -106,7 +113,7 @@ pub const Uniform = struct {
                     .visibility = gpu.ShaderStage.vertex,
                     .buffer = .{
                         .type = .uniform,
-                        .min_binding_size = @sizeOf(zlm.Mat),
+                        .min_binding_size = 2 * @sizeOf(zlm.Mat),
                     },
                 },
             },
@@ -119,7 +126,7 @@ pub const Uniform = struct {
             .entries = &.{gpu.BindGroupEntry{
                 .binding = 0,
                 .buffer = buffer,
-                .size = @sizeOf(zlm.Mat),
+                .size = 2 * @sizeOf(zlm.Mat),
             }},
         }).?;
         errdefer bindgroup.release();
@@ -131,9 +138,16 @@ pub const Uniform = struct {
         };
     }
 
-    pub fn update(uniform: *const Uniform, queue: *gpu.Queue, cam: Camera, proj: Camera.Projection) void {
-        const view = zlm.mul(cam.matrix(), proj.matrix());
-        queue.writeBuffer(uniform.buffer, 0, &view, @sizeOf(zlm.Mat));
+    pub fn update(uniform: *const Uniform, queue: *gpu.Queue, mats: [2]zlm.Mat) void {
+        queue.writeBuffer(uniform.buffer, 0, &mats, 2 * @sizeOf(zlm.Mat));
+    }
+
+    pub fn updateWorld(uniform: *const Uniform, queue: *gpu.Queue, world: zlm.Mat) void {
+        queue.writeBuffer(uniform.buffer, 0, &world, @sizeOf(zlm.Mat));
+    }
+
+    pub fn updateModel(uniform: *const Uniform, queue: *gpu.Queue, model: zlm.Mat) void {
+        queue.writeBuffer(uniform.buffer, @sizeOf(zlm.Mat), &model, @sizeOf(zlm.Mat));
     }
 
     pub fn deinit(uniform: *const Uniform) void {
