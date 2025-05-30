@@ -5,7 +5,7 @@ pub const Plugin = struct {
     lib: std.DynLib,
 
     pub const VTable = struct {
-        pub const Startup = *const fn (*Engine) callconv(.C) ?*anyopaque;
+        pub const Startup = *const fn (*Engine, ?*anyopaque) callconv(.C) ?*anyopaque;
         pub const Shutdown = *const fn (*Engine, *anyopaque) callconv(.C) void;
         pub const Update = *const fn (*Engine, *anyopaque) callconv(.C) bool;
 

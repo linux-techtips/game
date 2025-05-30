@@ -10,10 +10,10 @@ const sensitivity = 5;
 const speed: @Vector(3, f32) = @splat(35);
 
 pos: @Vector(3, f32),
-eul: struct { yaw: f32 = -90, pitch: f32 = 0 },
+eul: struct { yaw: f32 = -90, pitch: f32 = 0 } = .{},
 
 right: @Vector(3, f32) = @splat(0),
-dir: @Vector(3, f32) = .{ 0, 0, -1 },
+dir: @Vector(3, f32) = .{ 0, 0, 1 }, // changing the direction from { 0, 0, 1 } to { 0, 0, -1 } works for orthographic projection.
 up: @Vector(3, f32) = .{ 0, 1, 0 },
 
 fn vec4(vec: @Vector(3, f32)) zlm.Vec {
@@ -70,7 +70,7 @@ pub const Projection = struct {
 
     pub fn init(width: u32, height: u32, near: f32, far: f32, fov: f32) Projection {
         return .{
-            .aspect = @floatFromInt(width / height),
+            .aspect = @as(f32, @floatFromInt(width)) / @as(f32, @floatFromInt(height)),
             .near = near,
             .far = far,
             .fov = std.math.degreesToRadians(fov),
@@ -89,7 +89,7 @@ pub const Projection = struct {
     }
 
     pub fn resize(proj: *Projection, width: u32, height: u32) void {
-        proj.aspect = @floatFromInt(width / height);
+        proj.aspect = @as(f32, @floatFromInt(width)) / @as(f32, @floatFromInt(height));
     }
 };
 
@@ -101,7 +101,7 @@ pub const Uniform = struct {
     pub fn init(device: *gpu.Device) Uniform {
         const buffer = device.createBuffer(&.{
             .usage = gpu.BufferUsage.copy_dst | gpu.BufferUsage.uniform,
-            .size = 2 * @sizeOf(zlm.Mat),
+            .size = @sizeOf(zlm.Mat),
         }).?;
         errdefer buffer.release();
 
@@ -113,7 +113,7 @@ pub const Uniform = struct {
                     .visibility = gpu.ShaderStage.vertex,
                     .buffer = .{
                         .type = .uniform,
-                        .min_binding_size = 2 * @sizeOf(zlm.Mat),
+                        .min_binding_size = @sizeOf(zlm.Mat),
                     },
                 },
             },
@@ -126,7 +126,7 @@ pub const Uniform = struct {
             .entries = &.{gpu.BindGroupEntry{
                 .binding = 0,
                 .buffer = buffer,
-                .size = 2 * @sizeOf(zlm.Mat),
+                .size = @sizeOf(zlm.Mat),
             }},
         }).?;
         errdefer bindgroup.release();
@@ -138,16 +138,8 @@ pub const Uniform = struct {
         };
     }
 
-    pub fn update(uniform: *const Uniform, queue: *gpu.Queue, mats: [2]zlm.Mat) void {
-        queue.writeBuffer(uniform.buffer, 0, &mats, 2 * @sizeOf(zlm.Mat));
-    }
-
-    pub fn updateWorld(uniform: *const Uniform, queue: *gpu.Queue, world: zlm.Mat) void {
-        queue.writeBuffer(uniform.buffer, 0, &world, @sizeOf(zlm.Mat));
-    }
-
-    pub fn updateModel(uniform: *const Uniform, queue: *gpu.Queue, model: zlm.Mat) void {
-        queue.writeBuffer(uniform.buffer, @sizeOf(zlm.Mat), &model, @sizeOf(zlm.Mat));
+    pub fn update(uniform: *const Uniform, queue: *gpu.Queue, proj: zlm.Mat) void {
+        queue.writeBuffer(uniform.buffer, 0, &proj, @sizeOf(zlm.Mat));
     }
 
     pub fn deinit(uniform: *const Uniform) void {

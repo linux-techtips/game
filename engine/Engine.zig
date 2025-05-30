@@ -29,7 +29,7 @@ pub inline fn poll(engine: *Engine) []Engine.Event {
     return events;
 }
 
-pub inline fn time(engine: *Engine) f64 {
+pub inline fn time(engine: *const Engine) f64 {
     return Engine_Time(engine);
 }
 
@@ -49,7 +49,7 @@ pub inline fn addEvent(engine: *Engine, event: Engine.Event) void {
 extern fn Engine_Init(*Engine) callconv(.C) void;
 extern fn Engine_Deinit(*Engine) callconv(.C) void;
 extern fn Engine_Poll(*Engine) callconv(.C) void;
-extern fn Engine_Time(*Engine) callconv(.C) f64;
+extern fn Engine_Time(*const Engine) callconv(.C) f64;
 
 pub const Window = @import("Engine/window.zig").Window;
 pub const Plugin = @import("Engine/plugin.zig").Plugin;

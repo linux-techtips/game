@@ -130,7 +130,6 @@ pub const Event = union(enum) {
         x: f64,
         y: f64,
     },
-    reload: void,
 };
 
 pub const Action = enum(u8) { release = 0, press = 1, repeat = 2 };

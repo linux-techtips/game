@@ -76,6 +76,10 @@ pub fn beginFrame(renderer: *Renderer) Frame {
     return Frame.begin(renderer);
 }
 
+pub fn endFrame(renderer: *Renderer, frame: *const Frame) void {
+    frame.end(renderer);
+}
+
 fn createDepthTextureAndView(device: *gpu.Device, width: u32, height: u32) struct { *gpu.Texture, *gpu.TextureView } {
     const format = gpu.TextureFormat.depth24_plus;
     const texture = device.createTexture(&.{
