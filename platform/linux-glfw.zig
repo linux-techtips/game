@@ -52,6 +52,14 @@ export fn Engine_Window_Open(width: u32, height: u32, title: [*:0]const u8, conf
     return @ptrCast(handle);
 }
 
+export fn Engine_Window_GetUserPointer(window: *Window) ?*anyopaque {
+    return c.glfwGetWindowUserPointer(@ptrCast(window));
+}
+
+export fn Engine_Window_SetUserPointer(window: *Window, ptr: ?*anyopaque) void {
+    c.glfwSetWindowUserPointer(@ptrCast(window), ptr);
+}
+
 export fn Engine_Window_Isfocused(window: *Window) bool {
     return c.glfwGetWindowAttrib(@ptrCast(window), c.GLFW_FOCUSED) != 0;
 }

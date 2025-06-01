@@ -54,5 +54,6 @@ extern fn Engine_Time(*Engine) callconv(.C) f64;
 pub const Window = @import("Engine/window.zig").Window;
 pub const Plugin = @import("Engine/Plugin.zig");
 pub const Event = @import("Engine/event.zig").Event;
+pub const Pool = @import("zpool").Pool;
 
 pub const log = std.log.scoped(.engine);

@@ -12,9 +12,9 @@
             .url = "git+https://github.com/zig-gamedev/zmath.git#6a0747fe6834e58793500e05953c4c6ca045d3e1",
             .hash = "zmath-0.11.0-dev-wjwivTArAwDIkHSuSiU3KuBvxh7igjJjJMqYRfy3hihO",
         },
-        .obj = .{
-            .url = "git+https://github.com/chip2n/zig-obj.git#4ad4f6463b553395a1cd5388846d8623f350bf8b",
-            .hash = "obj-3.0.0-v8OfipDLAAAfZnwVIVO_8cb6ZWpkxWK6-HTkkF-k6WuO",
+        .zpool = .{
+            .url = "git+https://github.com/zig-gamedev/zpool#4c850e222e1ba507b45d7bab8cac83bdd74cacd6",
+            .hash = "zpool-0.11.0-dev-bG692aVDAQBCKslGROl47fqnnp7HFYV8fI-8z3wY06xx",
         },
     },
     .paths = .{
