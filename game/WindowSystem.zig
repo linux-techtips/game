@@ -34,7 +34,7 @@ pub fn openWindow(system: *System, ctx: *const gfx.Context, width: u32, height: 
         .width = width,
         .height = height,
         .format = .bgra8_unorm_srgb,
-        .present_mode = .fifo,
+        .present_mode = .mailbox,
         .device = ctx.device,
         .usage = gpu.TextureUsage.copy_dst | gpu.TextureUsage.copy_src | gpu.TextureUsage.render_attachment,
     });
@@ -86,7 +86,7 @@ pub fn update(system: *System, ctx: *const gfx.Context, event: *const Engine.Eve
                 .width = e.width,
                 .height = e.height,
                 .format = .bgra8_unorm_srgb,
-                .present_mode = .fifo,
+                .present_mode = .mailbox,
                 .device = ctx.device,
                 .usage = gpu.TextureUsage.copy_dst | gpu.TextureUsage.copy_src | gpu.TextureUsage.render_attachment,
             });

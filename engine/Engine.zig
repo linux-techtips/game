@@ -51,6 +51,7 @@ extern fn Engine_Deinit(*Engine) callconv(.C) void;
 extern fn Engine_Poll(*Engine) callconv(.C) void;
 extern fn Engine_Time(*Engine) callconv(.C) f64;
 
+pub const Monitor = @import("Engine/monitor.zig").Monitor;
 pub const Window = @import("Engine/window.zig").Window;
 pub const Plugin = @import("Engine/Plugin.zig");
 pub const Event = @import("Engine/event.zig").Event;
