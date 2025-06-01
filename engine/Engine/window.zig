@@ -2,13 +2,11 @@ const gpu = @import("gpu");
 
 pub const Window = opaque {
     pub const Config = struct {
-        size: ?struct { u32, u32 } = null,
-        title: [:0]const u8,
         resizable: bool = true,
     };
 
-    pub inline fn open(config: Config) ?*Window {
-        return Engine_Window_Open(&config);
+    pub inline fn open(width: u32, height: u32, title: [:0]const u8, config: Config) ?*Window {
+        return Engine_Window_Open(width, height, title, &config);
     }
 
     pub inline fn close(window: *Window) void {
@@ -53,7 +51,7 @@ pub const Window = opaque {
         Engine_Window_Uncapture_Cursor(window);
     }
 
-    extern fn Engine_Window_Open(*const Config) callconv(.C) ?*Window;
+    extern fn Engine_Window_Open(u32, u32, [*:0]const u8, *const Config) callconv(.C) ?*Window;
     extern fn Engine_Window_Close(*Window) callconv(.C) void;
     extern fn Engine_Window_Size(*Window) callconv(.C) extern struct { width: u32, height: u32 };
     extern fn Engine_Window_Surface(*Window, *gpu.Instance) callconv(.C) ?*gpu.Surface;
