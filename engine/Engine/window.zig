@@ -2,17 +2,33 @@ const gpu = @import("gpu");
 
 pub const Window = opaque {
     pub const Config = struct {
-        size: ?struct { u32, u32 } = null,
-        title: [:0]const u8,
         resizable: bool = true,
+        pos: ?struct { u32, u32 } = null,
     };
 
-    pub inline fn open(config: Config) ?*Window {
-        return Engine_Window_Open(&config);
+    pub inline fn open(width: u32, height: u32, title: [:0]const u8, config: Config) ?*Window {
+        return Engine_Window_Open(width, height, title, &config);
     }
 
     pub inline fn close(window: *Window) void {
         Engine_Window_Close(window);
+    }
+
+    pub inline fn getUserPointer(window: *Window) ?*anyopaque {
+        return Engine_Window_GetUserPointer(window);
+    }
+
+    pub inline fn setUserPointer(window: *Window, ptr: ?*anyopaque) void {
+        Engine_Window_SetUserPointer(window, ptr);
+    }
+
+    pub inline fn getPos(window: *Window) struct { i32, i32 } {
+        const pos = Engine_Window_GetPos(window);
+        return .{ pos.x, pos.y };
+    }
+
+    pub inline fn setPos(window: *Window, x: u32, y: u32) void {
+        Engine_Window_SetPos(window, x, y);
     }
 
     pub inline fn size(window: *Window) struct { u32, u32 } {
@@ -20,9 +36,14 @@ pub const Window = opaque {
         return .{ dims.width, dims.height };
     }
 
+    pub inline fn framebufferSize(window: *Window) struct { u32, u32 } {
+        const dims = Engine_Window_FrameBufferSize(window);
+        return .{ dims.width, dims.height };
+    }
+
     pub inline fn aspect(window: *Window) f64 {
         const width: f32, const height: f32 = blk: {
-            const dims = window.size();
+            const dims = window.framebufferSize();
             break :blk .{ @floatFromInt(dims[0]), @floatFromInt(dims[1]) };
         };
 
@@ -53,9 +74,14 @@ pub const Window = opaque {
         Engine_Window_Uncapture_Cursor(window);
     }
 
-    extern fn Engine_Window_Open(*const Config) callconv(.C) ?*Window;
+    extern fn Engine_Window_Open(u32, u32, [*:0]const u8, *const Config) callconv(.C) ?*Window;
     extern fn Engine_Window_Close(*Window) callconv(.C) void;
+    extern fn Engine_Window_GetUserPointer(*Window) callconv(.C) ?*anyopaque;
+    extern fn Engine_Window_SetUserPointer(*Window, ?*anyopaque) callconv(.C) void;
+    extern fn Engine_Window_GetPos(*Window) callconv(.C) extern struct { x: i32, y: i32 };
+    extern fn Engine_Window_SetPos(*Window, x: u32, y: u32) callconv(.C) void;
     extern fn Engine_Window_Size(*Window) callconv(.C) extern struct { width: u32, height: u32 };
+    extern fn Engine_Window_FrameBufferSize(*Window) callconv(.C) extern struct { width: u32, height: u32 };
     extern fn Engine_Window_Surface(*Window, *gpu.Instance) callconv(.C) ?*gpu.Surface;
     extern fn Engine_Window_Focus(*Window) callconv(.C) void;
     extern fn Engine_Window_Unfocus(*Window) callconv(.C) void;

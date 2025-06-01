@@ -33,7 +33,7 @@ pub fn build(b: *std.Build) !void {
         .link_mode = .dynamic,
     });
     const zmath_dep = b.dependency("zmath", .{});
-    const obj_dep = b.dependency("obj", .{ .target = target, .optimize = optimize });
+    const zpool_dep = b.dependency("zpool", .{});
 
     const engine_mod = b.addModule("Engine", .{
         .root_source_file = b.path("engine/Engine.zig"),
@@ -41,6 +41,7 @@ pub fn build(b: *std.Build) !void {
         .target = target,
     });
 
+    engine_mod.addImport("zpool", zpool_dep.module("root"));
     engine_mod.addImport("gpu", wgpu_dep.module("wgpu"));
 
     const platform_mod = b.addModule("platform", .{
@@ -86,7 +87,6 @@ pub fn build(b: *std.Build) !void {
 
     game_lib.root_module.addImport("zlm", zmath_dep.module("root"));
     game_lib.root_module.addImport("gpu", wgpu_dep.module("wgpu"));
-    game_lib.root_module.addImport("obj", obj_dep.module("obj"));
     game_lib.root_module.addImport("Engine", engine_mod);
 
     game_lib.linkSystemLibrary("wgpu_native");

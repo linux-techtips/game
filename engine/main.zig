@@ -1,4 +1,4 @@
-pub const Engine = @import("Engine.zig");
+const Engine = @import("Engine.zig");
 const std = @import("std");
 
 pub fn main() !void {
@@ -11,7 +11,7 @@ pub fn main() !void {
     var plugin, var game = try Engine.Plugin.load("./zig-out/lib/libgame.so");
     defer plugin.unload();
 
-    const state = game.startup(&engine) orelse {
+    var state: *anyopaque = game.startup(&engine, null) orelse {
         Engine.log.err("failed to initialize plugin state: '{s}'", .{plugin.path});
         std.process.exit(1);
     };
@@ -32,9 +32,7 @@ pub fn main() !void {
             game = try plugin.reload();
             old_stat = new_stat;
 
-            // This is rather stinky. After polling, the engine events will be reset so we have to update again.
-            engine.addEvent(.reload);
-            if (!game.update(&engine, state)) break :loop;
+            state = if (game.startup(&engine, state)) |new| new else state;
         }
     }
 }

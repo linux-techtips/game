@@ -99,6 +99,7 @@ pub const Event = union(enum) {
         right_alt = 346,
         right_super = 347,
         menu = 348,
+        unknown = std.math.maxInt(u16),
         _,
     };
 

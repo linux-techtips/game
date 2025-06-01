@@ -1,4 +1,6 @@
 const Engine = @import("Engine");
+
+const Monitor = Engine.Monitor;
 const Window = Engine.Window;
 const Event = Engine.Event;
 
@@ -29,7 +31,17 @@ export fn Engine_Time(_: *Engine) callconv(.C) f64 {
     return c.glfwGetTime();
 }
 
-export fn Engine_Window_Open(config: *const Window.Config) callconv(.C) ?*Window {
+export fn Engine_Monitor_Primary() ?*Monitor {
+    return @ptrCast(c.glfwGetPrimaryMonitor());
+}
+
+export fn Engine_Monitor_Size(monitor: *Monitor) extern struct { width: u32, height: u32 } {
+    const mode = c.glfwGetVideoMode(@ptrCast(monitor));
+
+    return .{ .width = @intCast(mode.*.width), .height = @intCast(mode.*.height) };
+}
+
+export fn Engine_Window_Open(width: u32, height: u32, title: [*:0]const u8, config: *const Window.Config) callconv(.C) ?*Window {
     const monitor = c.glfwGetPrimaryMonitor() orelse return null;
     const mode = c.glfwGetVideoMode(monitor) orelse return null;
 
@@ -41,10 +53,9 @@ export fn Engine_Window_Open(config: *const Window.Config) callconv(.C) ?*Window
 
     c.glfwWindowHint(c.GLFW_CLIENT_API, @intFromBool(false));
 
-    const width: c_int = if (config.size == null) mode.*.width else @intCast(config.size.?[0]);
-    const height: c_int = if (config.size == null) mode.*.height else @intCast(config.size.?[1]);
+    const handle = c.glfwCreateWindow(@intCast(width), @intCast(height), title, null, null) orelse return null;
 
-    const handle = c.glfwCreateWindow(width, height, config.title, null, null) orelse return null;
+    if (config.pos) |pos| Engine_Window_SetPos(@ptrCast(handle), pos[0], pos[1]);
 
     _ = c.glfwSetFramebufferSizeCallback(handle, @ptrCast(&resizeCallback));
     _ = c.glfwSetMouseButtonCallback(handle, @ptrCast(&mousePressCallback));
@@ -53,6 +64,27 @@ export fn Engine_Window_Open(config: *const Window.Config) callconv(.C) ?*Window
     _ = c.glfwSetKeyCallback(handle, @ptrCast(&keyPressCallback));
 
     return @ptrCast(handle);
+}
+
+export fn Engine_Window_GetUserPointer(window: *Window) ?*anyopaque {
+    return c.glfwGetWindowUserPointer(@ptrCast(window));
+}
+
+export fn Engine_Window_SetUserPointer(window: *Window, ptr: ?*anyopaque) void {
+    c.glfwSetWindowUserPointer(@ptrCast(window), ptr);
+}
+
+export fn Engine_Window_SetPos(window: *Window, x: u32, y: u32) void {
+    c.glfwSetWindowPos(@ptrCast(window), @intCast(x), @intCast(y));
+}
+
+export fn Engine_Window_GetPos(window: *Window) extern struct { x: i32, y: i32 } {
+    var x: i32 = undefined;
+    var y: i32 = undefined;
+
+    c.glfwGetWindowPos(@ptrCast(window), @ptrCast(&x), @ptrCast(&y));
+
+    return .{ .x = x, .y = y };
 }
 
 export fn Engine_Window_Isfocused(window: *Window) bool {
@@ -87,7 +119,16 @@ export fn Engine_Window_Size(window: *Window) callconv(.C) extern struct { width
     var width: c_int = undefined;
     var height: c_int = undefined;
 
-    c.glfwGetWindowSize(@ptrCast(window), &width, &height);
+    c.glfwGetWindowSize(@ptrCast(window), @ptrCast(&width), @ptrCast(&height));
+
+    return .{ .width = @intCast(width), .height = @intCast(height) };
+}
+
+export fn Engine_Window_FrameBufferSize(window: *Window) callconv(.C) extern struct { width: u32, height: u32 } {
+    var width: c_int = undefined;
+    var height: c_int = undefined;
+
+    c.glfwGetFramebufferSize(@ptrCast(window), @ptrCast(&width), @ptrCast(&height));
 
     return .{ .width = @intCast(width), .height = @intCast(height) };
 }
@@ -129,7 +170,7 @@ fn keyPressCallback(window: ?*Window, key: c_int, _: c_int, action: c_int, mods:
     var engine = globalEngine orelse return;
     engine.addEvent(.{ .key_press = .{
         .window = window,
-        .key = @enumFromInt(key),
+        .key = if (key == -1) .unknown else @enumFromInt(key),
         .action = @enumFromInt(action),
         .mods = @bitCast(@as(u8, @truncate(@as(u32, @intCast(mods))))),
     } });
@@ -145,22 +186,13 @@ fn mousePressCallback(window: ?*Window, button: c_int, action: c_int, mods: c_in
     } });
 }
 
-var mouse_last_x: f64 = 0;
-var mouse_last_y: f64 = 0;
-
 fn mouseMoveCallback(window: ?*Window, x: f64, y: f64) callconv(.C) void {
     var engine = globalEngine orelse return;
 
-    const delta_x = x - mouse_last_x;
-    const delta_y = y - mouse_last_y;
-
-    mouse_last_x = x;
-    mouse_last_y = y;
-
     engine.addEvent(.{ .mouse_move = .{
         .window = window,
-        .x = delta_x,
-        .y = delta_y,
+        .x = x,
+        .y = y,
     } });
 }
 
